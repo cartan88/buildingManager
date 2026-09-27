@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BuildingManager.Api/BuildingManager.Api.csproj" />
+    <Project Path="src/BuildingManager.Core/BuildingManager.Core.csproj" />
+    <Project Path="src/BuildingManager.Infrastructure/BuildingManager.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BuildingManager.Tests/BuildingManager.Tests.csproj" />
+  </Folder>
+</Solution>
