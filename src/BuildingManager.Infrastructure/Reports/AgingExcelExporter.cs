@@ -1,12 +1,11 @@
 using BuildingManager.Core.Billing;
 using ClosedXML.Excel;
+using static BuildingManager.Infrastructure.Reports.ExcelLayout;
 
 namespace BuildingManager.Infrastructure.Reports;
 
 public static class AgingExcelExporter
 {
-    public const string PesoFormat = "₱#,##0.00;[Red]-₱#,##0.00";
-
     private static readonly AgingBucket[] Buckets =
         [AgingBucket.Current, AgingBucket.Days1To30, AgingBucket.Days31To60, AgingBucket.Days61To90, AgingBucket.Over90];
 
@@ -71,42 +70,8 @@ public static class AgingExcelExporter
         }
 
         WriteTotalsRow(ws, r, firstDataRow: 5, fromCol: 6, toCol: 8);
-        ws.Range(5, 5, r, 5).Style.DateFormat.Format = "dd-MMM-yyyy";
+        ws.Range(5, 5, r, 5).Style.DateFormat.Format = DateFormat;
         ws.Range(5, 6, r, 8).Style.NumberFormat.Format = PesoFormat;
         Finish(ws, headerRow: 4);
-    }
-
-    private static void WriteTitle(IXLWorksheet ws, string title, DateOnly asOf)
-    {
-        ws.Cell(1, 1).Value = title;
-        ws.Cell(1, 1).Style.Font.SetBold().Font.SetFontSize(14);
-        ws.Cell(2, 1).Value = $"As of {asOf:dd MMMM yyyy}";
-        ws.Cell(2, 1).Style.Font.SetItalic();
-    }
-
-    private static void WriteHeader(IXLWorksheet ws, int row, IReadOnlyList<string> headers)
-    {
-        for (var i = 0; i < headers.Count; i++) ws.Cell(row, i + 1).Value = headers[i];
-        var range = ws.Range(row, 1, row, headers.Count);
-        range.Style.Font.SetBold().Fill.SetBackgroundColor(XLColor.FromHtml("#DCE6F1"));
-        range.Style.Border.SetBottomBorder(XLBorderStyleValues.Thin);
-    }
-
-    private static void WriteTotalsRow(IXLWorksheet ws, int row, int firstDataRow, int fromCol, int toCol)
-    {
-        ws.Cell(row, 1).Value = "Total";
-        for (var c = fromCol; c <= toCol; c++)
-        {
-            var col = XLHelper.GetColumnLetterFromNumber(c);
-            ws.Cell(row, c).FormulaA1 = row > firstDataRow ? $"SUM({col}{firstDataRow}:{col}{row - 1})" : "0";
-        }
-        ws.Row(row).Style.Font.SetBold();
-        ws.Range(row, 1, row, toCol).Style.Border.SetTopBorder(XLBorderStyleValues.Thin);
-    }
-
-    private static void Finish(IXLWorksheet ws, int headerRow)
-    {
-        ws.SheetView.FreezeRows(headerRow);
-        ws.Columns().AdjustToContents();
     }
 }

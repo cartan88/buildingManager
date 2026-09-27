@@ -1,20 +1,22 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, formatDate, formatPeso, paymentMethodLabels, todayIso, type ChargeType, type LeaseDetail, type LedgerEntry, type PaymentMethod } from '../api'
+import { addDays, api, formatDate, formatPeso, paymentMethodLabels, todayIso, type BusinessProfile, type ChargeType, type InvoiceSummary, type LeaseDetail, type LedgerEntry, type OpenCharge, type PaymentMethod } from '../api'
+import { InvoiceTable } from '../invoiceUi'
 import { Empty, ErrorBanner, Field, Money, PageHeader, Panel, useApi, useSubmit } from '../ui'
 
-type Mode = 'payment' | 'charge' | 'end' | null
+type Mode = 'payment' | 'charge' | 'statement' | 'end' | null
 
 export default function LeaseDetailPage() {
   const { id } = useParams()
   const { data, error, reload } = useApi<LeaseDetail>(`/leases/${id}`)
+  const invoices = useApi<InvoiceSummary[]>(`/invoices?leaseId=${id}`)
   const [mode, setMode] = useState<Mode>(null)
-  const { error: actionError, run } = useSubmit()
+  const { error: actionError, run, setError } = useSubmit()
 
   if (error) return <ErrorBanner message={error} />
   if (!data) return null
   const { lease, ledger, balance } = data
-  const done = () => { setMode(null); void reload() }
+  const done = () => { setMode(null); void reload(); void invoices.reload() }
 
   const voidEntry = async (e: LedgerEntry) => {
     const what = e.kind === 'Payment' ? `payment of ${formatPeso(e.payment)}` : `charge "${e.description}"`
@@ -29,6 +31,7 @@ export default function LeaseDetailPage() {
         {lease.status === 'Active' && <>
           <button onClick={() => setMode('payment')}>Record payment</button>
           <button className="secondary" onClick={() => setMode('charge')}>Add charge</button>
+          <button className="secondary" onClick={() => setMode('statement')}>Create statement</button>
           <button className="secondary" onClick={() => setMode('end')}>End lease</button>
         </>}
       </PageHeader>
@@ -50,6 +53,7 @@ export default function LeaseDetailPage() {
 
       {mode === 'payment' && <PaymentForm leaseId={lease.id} suggested={Math.max(balance, 0)} onDone={done} onCancel={() => setMode(null)} />}
       {mode === 'charge' && <ChargeForm leaseId={lease.id} onDone={done} onCancel={() => setMode(null)} />}
+      {mode === 'statement' && <StatementForm leaseId={lease.id} onDone={done} onCancel={() => setMode(null)} />}
       {mode === 'end' && <EndLeaseForm leaseId={lease.id} onDone={done} onCancel={() => setMode(null)} />}
 
       <Panel title="Ledger">
@@ -72,7 +76,74 @@ export default function LeaseDetailPage() {
           </table>
         )}
       </Panel>
+
+      <Panel title="Statements">
+        <ErrorBanner message={invoices.error} />
+        {invoices.data && <InvoiceTable invoices={invoices.data} showTenant={false} onChanged={invoices.reload} onError={setError} />}
+      </Panel>
     </>
+  )
+}
+
+function StatementForm({ leaseId, onDone, onCancel }: { leaseId: number; onDone: () => void; onCancel: () => void }) {
+  const charges = useApi<OpenCharge[]>(`/leases/${leaseId}/open-charges`)
+  const profile = useApi<BusinessProfile>('/settings/business')
+  const [issueDate, setIssueDate] = useState(todayIso())
+  const [dueDate, setDueDate] = useState<string>()
+  const [excluded, setExcluded] = useState<Set<number>>(new Set())
+  const [notes, setNotes] = useState('')
+  const { error, saving, run } = useSubmit()
+
+  const dueDays = profile.data?.defaultDueDays ?? 7
+  const due = dueDate ?? addDays(issueDate, dueDays)
+  const selected = (charges.data ?? []).filter(c => !excluded.has(c.id))
+  const toggle = (id: number) => setExcluded(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    const ok = await run(() => api.post(`/leases/${leaseId}/invoices`, {
+      issueDate, dueDate: due, chargeIds: selected.map(c => c.id), notes: notes || null,
+    }))
+    if (ok) onDone() // the new statement appears under Statements with its PDF link
+  }
+
+  if (profile.data && !profile.data.name)
+    return <Panel title="Create statement"><div className="notice">Add your business details in <Link to="/settings">Settings</Link> first.</div></Panel>
+
+  return (
+    <Panel title="Create statement">
+      <form onSubmit={submit}>
+        {charges.data?.length === 0 ? <Empty>No unpaid charges to bill.</Empty> : (
+          <table>
+            <thead><tr><th /><th>Charge</th><th>Due</th><th className="num">Amount</th><th className="num">Paid</th><th className="num">Balance</th></tr></thead>
+            <tbody>
+              {charges.data?.map(c => (
+                <tr key={c.id}>
+                  <td><input type="checkbox" className="check" checked={!excluded.has(c.id)} onChange={() => toggle(c.id)} aria-label={c.description} /></td>
+                  <td>{c.description}</td>
+                  <td>{formatDate(c.dueDate)}</td>
+                  <td className="num"><Money value={c.amount} /></td>
+                  <td className="num">{c.paid ? <Money value={c.paid} /> : ''}</td>
+                  <td className="num"><Money value={c.balance} /></td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot><tr><td colSpan={5}>Amount due</td><td className="num"><Money value={selected.reduce((s, c) => s + c.balance, 0)} /></td></tr></tfoot>
+          </table>
+        )}
+        <div className="form-grid" style={{ marginTop: 12 }}>
+          <Field label="Issue date"><input type="date" value={issueDate} onChange={e => e.target.value && setIssueDate(e.target.value)} required /></Field>
+          <Field label="Due date" hint={`Default: ${dueDays} days after issue`}><input type="date" value={due} min={issueDate} onChange={e => setDueDate(e.target.value)} required /></Field>
+        </div>
+        <Field label="Note on statement (optional)"><textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+        <div className="form-buttons">
+          <button type="submit" disabled={saving || selected.length === 0}>Issue statement</button>
+          <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
+        </div>
+      </form>
+      <p className="muted">Once issued, a statement can't be edited, only voided. Its number is never reused.</p>
+      <ErrorBanner message={error ?? charges.error} />
+    </Panel>
   )
 }
 

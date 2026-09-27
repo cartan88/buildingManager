@@ -104,5 +104,40 @@ public class ApiTests : DatabaseTest
         Assert.Equal(3, await db.Charges.CountAsync(c => c.LeaseId == lease.Id && !c.IsVoided));
     }
 
+    [Fact]
+    public async Task Statement_pdf_opens_inline_and_register_exports_to_excel()
+    {
+        var client = TrustedClient();
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/settings/business", new
+        {
+            name = "Sample Owner", documentTitle = "Billing Statement", numberPrefix = "BS", defaultDueDays = 7,
+        })).StatusCode);
+        var property = await (await client.PostAsJsonAsync("/api/properties", new { name = "Test Apartments" })).Content.ReadFromJsonAsync<IdResponse>();
+        var unit = await (await client.PostAsJsonAsync($"/api/properties/{property!.Id}/units", new { name = "Unit 1A", defaultMonthlyRent = 12000 }))
+            .Content.ReadFromJsonAsync<IdResponse>();
+        var tenant = await (await client.PostAsJsonAsync("/api/tenants", new { fullName = "Juan Dela Cruz" })).Content.ReadFromJsonAsync<IdResponse>();
+        var start = DateOnly.FromDateTime(DateTime.Today).AddMonths(-1);
+        var lease = await (await client.PostAsJsonAsync("/api/leases", new
+        {
+            unitId = unit!.Id, tenantId = tenant!.Id, startDate = start, monthlyRent = 12000, dueDay = start.Day, gracePeriodDays = 0, securityDeposit = 0,
+        })).Content.ReadFromJsonAsync<IdResponse>();
+
+        var issued = await client.PostAsJsonAsync($"/api/leases/{lease!.Id}/invoices", new { issueDate = DateOnly.FromDateTime(DateTime.Today) });
+        Assert.Equal(HttpStatusCode.Created, issued.StatusCode);
+        var invoice = await issued.Content.ReadFromJsonAsync<IdResponse>();
+
+        var pdf = await client.GetAsync($"/api/invoices/{invoice!.Id}/pdf");
+        Assert.Equal("application/pdf", pdf.Content.Headers.ContentType?.MediaType);
+        Assert.StartsWith("inline", pdf.Content.Headers.ContentDisposition?.ToString());
+        Assert.Contains($"BS-{DateTime.Today.Year}-0001.pdf", pdf.Content.Headers.ContentDisposition?.ToString());
+
+        var xlsx = await client.GetAsync("/api/invoices.xlsx");
+        Assert.Equal(HttpStatusCode.OK, xlsx.StatusCode);
+        Assert.Equal("PK", System.Text.Encoding.ASCII.GetString((await xlsx.Content.ReadAsByteArrayAsync())[..2])); // zip container
+
+        var dup = await client.PostAsJsonAsync($"/api/leases/{lease.Id}/invoices", new { issueDate = DateOnly.FromDateTime(DateTime.Today), chargeIds = new[] { 999999 } });
+        Assert.Equal(HttpStatusCode.BadRequest, dup.StatusCode);
+    }
+
     private record IdResponse(int Id);
 }

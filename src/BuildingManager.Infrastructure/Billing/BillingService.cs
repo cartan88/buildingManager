@@ -117,28 +117,6 @@ public class BillingService(AppDbContext db, TimeProvider clock)
         return voided;
     }
 
-    /// <summary>
-    /// Runs <paramref name="action"/> in a transaction holding an exclusive SQL Server app lock for the lease,
-    /// so the background worker and API requests can't read-then-write the same lease's balances at once.
-    /// Re-entrant: nested calls join the transaction that is already open.
-    /// </summary>
-    private async Task InLeaseLockAsync(int leaseId, Func<Task> action, CancellationToken ct)
-    {
-        var tx = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
-        try
-        {
-            var resource = $"BuildingManager.Lease.{leaseId}";
-            await db.Database.ExecuteSqlInterpolatedAsync($"""
-                DECLARE @result int;
-                EXEC @result = sp_getapplock @Resource = {resource}, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 30000;
-                IF @result < 0 THROW 50000, 'Timed out waiting for another billing operation on this lease.', 1;
-                """, ct);
-            await action();
-            if (tx is not null) await tx.CommitAsync(ct);
-        }
-        finally
-        {
-            if (tx is not null) await tx.DisposeAsync();
-        }
-    }
+    private Task InLeaseLockAsync(int leaseId, Func<Task> action, CancellationToken ct) =>
+        db.InAppLockAsync(AppLocks.Lease(leaseId), action, ct);
 }

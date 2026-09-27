@@ -1,8 +1,8 @@
 # Building Manager
 
-Rental property manager for a single Windows PC: properties, units, tenants, leases, automatic monthly rent billing, payments, overdue/aging tracking and Excel reports. Amounts are in Philippine pesos (₱).
+Rental property manager for a single Windows PC: properties, units, tenants, leases, automatic monthly rent billing, payments, overdue/aging tracking, numbered billing statements (PDF) and Excel reports. Amounts are in Philippine pesos (₱).
 
-**Stack:** ASP.NET Core (.NET 10) API · EF Core · SQL Server Express · React + TypeScript (Vite) · ClosedXML (Excel) · QuestPDF (invoices, next up)
+**Stack:** ASP.NET Core (.NET 10) API · EF Core · SQL Server Express · React + TypeScript (Vite) · ClosedXML (Excel) · QuestPDF (statements)
 
 ## Running it
 
@@ -36,11 +36,22 @@ Then open http://localhost:5073.
 - Rent due on the 29th–31st moves to the last day of shorter months.
 - Changing a lease's rent affects future charges only.
 
+## Billing statements
+
+- Fill in **Settings** first: your name, TIN, address, contact details and payment instructions, all printed on every statement.
+- **Create statement** on a lease lists its unpaid charges, arrears included, and you can untick any you want to leave off. **Statements → Issue statements for all** does the monthly run in one go. It skips tenants whose unpaid charges are already all on a live statement, so running it twice doesn't create duplicates.
+- **Numbering:** `BS-2026-0001`, `BS-2026-0002`, ... is sequential per year with no gaps, even when statements are issued at the same time. The prefix is configurable.
+- **Statements never change once issued.** Everything printed is copied onto the statement and the exact PDF is stored in the database. Editing a tenant or your settings later only affects future statements.
+- **Void, don't edit.** A voided statement keeps its number and its stored original. Downloads of it are stamped VOID. To correct one, void it and issue a new one.
+- Each statement's payment status (Unpaid / Partially paid / Paid) updates live as payments come in.
+- **Statements → Export to Excel** gives the full register, including voided numbers, for your accountant.
+- PDFs use the Lato font bundled with QuestPDF, so they look identical on any PC.
+
 ## Project layout
 
 ```
 src/BuildingManager.Core            entities + pure billing logic (rent schedule, allocation, aging)
-src/BuildingManager.Infrastructure  EF Core DbContext & migrations, billing service, reports, Excel export
+src/BuildingManager.Infrastructure  EF Core DbContext & migrations, billing and invoice services, PDF + Excel output
 src/BuildingManager.Api             minimal-API endpoints, rent worker, serves the React build from wwwroot
 src/web                             React UI
 tests/BuildingManager.Tests         xUnit tests for the billing logic
@@ -55,17 +66,17 @@ dotnet ef migrations add <Name> -p src/BuildingManager.Infrastructure -s src/Bui
 
 ## Philippines notes
 
-- **Invoices vs. BIR:** a document you present as an official *invoice* must follow BIR rules (registered serial numbers and an ATP, or a registered CAS/CRM system). Until that's set up, generated PDFs should be titled *Billing Statement* / *Statement of Account*. Confirm with your accountant.
+- **Invoices vs. BIR:** a document you present as an official *invoice* must follow BIR rules (registered serial numbers and an ATP, or a registered CAS/CRM system). That's why statements default to the title *Billing Statement* and carry a "not an official receipt or invoice" footer. Only change the title in Settings once your accountant confirms you're registered for it.
 - **VAT:** residential leases up to ₱15,000/month per unit are VAT-exempt, but the rules depend on your registration status and total gross receipts. Confirm the thresholds with your accountant.
 - **Withholding tax:** corporate tenants usually withhold 5% expanded withholding tax (EWT) on rent and give you BIR Form 2307. Record their payment as the net amount received, plus the 2307 amount, so the charge is fully settled. (A dedicated payment method for this is on the roadmap.)
 - **Rent Control Act (RA 9653):** for covered residential units, the deposit is capped at 2 months and advance rent at 1 month.
 
 ## Roadmap
 
-1. Billing statements / invoices (QuestPDF), numbered sequentially and never changed once issued
-2. Expenses (vendors, categories, receipts) and profit and loss per property
-3. More Excel reports: rent roll, tenant ledger, monthly income, annual tax summary
-4. Lease expiry reminders, EWT/2307 tracking, bank CSV import
+1. Expenses (vendors, categories, receipts) and profit and loss per property
+2. More Excel reports: rent roll, tenant ledger, monthly income, annual tax summary
+3. Lease expiry reminders, EWT/2307 tracking, bank CSV import
+4. Emailing statements to tenants
 
 ## Security
 

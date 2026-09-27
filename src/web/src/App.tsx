@@ -5,13 +5,17 @@ import TenantsPage from './pages/TenantsPage'
 import LeasesPage from './pages/LeasesPage'
 import LeaseDetailPage from './pages/LeaseDetailPage'
 import OverduePage from './pages/OverduePage'
+import InvoicesPage from './pages/InvoicesPage'
+import SettingsPage from './pages/SettingsPage'
 
 const nav = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/overdue', label: 'Overdue & aging' },
   { to: '/leases', label: 'Leases' },
+  { to: '/statements', label: 'Statements' },
   { to: '/properties', label: 'Properties & units' },
   { to: '/tenants', label: 'Tenants' },
+  { to: '/settings', label: 'Settings' },
 ]
 
 export default function App() {
@@ -33,6 +37,8 @@ export default function App() {
           <Route path="/leases/:id" element={<LeaseDetailPage />} />
           <Route path="/properties" element={<PropertiesPage />} />
           <Route path="/tenants" element={<TenantsPage />} />
+          <Route path="/statements" element={<InvoicesPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>
     </div>

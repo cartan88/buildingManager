@@ -33,6 +33,29 @@ export interface Dashboard {
   totalOutstanding: number; totalOverdue: number; overdueLeases: number; tenantCredit: number; activeLeases: number; units: number
 }
 
+export type InvoiceStatus = 'Issued' | 'Voided'
+export type InvoicePaymentStatus = 'Unpaid' | 'PartiallyPaid' | 'Paid' | 'Voided'
+
+export interface InvoiceSummary {
+  id: number; leaseId: number; number: string; issueDate: string; dueDate: string; status: InvoiceStatus; voidReason?: string
+  tenantName: string; propertyName: string; unitName: string; total: number; stillOwed: number; paymentStatus: InvoicePaymentStatus
+}
+export interface OpenCharge { id: number; type: ChargeType; description: string; dueDate: string; amount: number; paid: number; balance: number }
+export interface BusinessProfile {
+  name: string; address?: string; tin?: string; contact?: string; paymentInstructions?: string
+  documentTitle: string; numberPrefix: string; footerNote?: string; defaultDueDays: number
+}
+
+export const paymentStatusLabels: Record<InvoicePaymentStatus, string> = {
+  Unpaid: 'Unpaid', PartiallyPaid: 'Partially paid', Paid: 'Paid', Voided: 'Void',
+}
+
+export const addDays = (iso: string, days: number) => {
+  const d = new Date(`${iso}T00:00:00`)
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export class ApiError extends Error {}
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
