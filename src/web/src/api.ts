@@ -56,6 +56,38 @@ export const addDays = (iso: string, days: number) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+export type ExpenseCategoryKind = 'Operating' | 'Capital'
+export interface ExpenseCategory { id: number; name: string; kind: ExpenseCategoryKind; sortOrder: number; isArchived: boolean }
+export interface Receipt { id: number; fileName: string; contentType: string; sizeBytes: number }
+export interface Expense {
+  id: number; date: string; propertyId?: number; property?: string; categoryId: number; category: string; kind: ExpenseCategoryKind
+  vendor?: string; description: string; amount: number; method: PaymentMethod; reference?: string; notes?: string
+  isVoided: boolean; receipts: Receipt[]
+}
+
+export type PnlSection = 'Income' | 'OperatingExpense' | 'CapitalExpense'
+export interface PnlTotals { byColumn: Record<string, number>; total: number }
+export interface PnlReport {
+  columns: { key: string; label: string }[]
+  lines: { section: PnlSection; label: string; amounts: Record<string, number>; total: number }[]
+  income: PnlTotals; operatingExpenses: PnlTotals; netIncome: PnlTotals; capitalExpenses: PnlTotals
+}
+
+/** Multipart upload; the browser sets the boundary, so no Content-Type header here. */
+export async function uploadFile<T>(url: string, file: File): Promise<T> {
+  const body = new FormData()
+  body.append('file', file)
+  const res = await fetch(`/api${url}`, { method: 'POST', body, headers: { 'X-Requested-With': 'BuildingManager' } })
+  if (!res.ok) {
+    const problem = await res.json().catch(() => null)
+    throw new ApiError((problem?.errors ? Object.values(problem.errors).flat().join(' ') : problem?.title) || `Upload failed (${res.status})`)
+  }
+  return res.json() as Promise<T>
+}
+
+export const monthStart = (iso: string) => `${iso.slice(0, 7)}-01`
+export const monthEnd = (iso: string) => addDays(monthStart(addDays(monthStart(iso), 32)), -1)
+
 export class ApiError extends Error {}
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {

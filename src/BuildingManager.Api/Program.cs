@@ -3,6 +3,7 @@ using BuildingManager.Api;
 using BuildingManager.Api.Endpoints;
 using BuildingManager.Infrastructure.Billing;
 using BuildingManager.Infrastructure.Data;
+using BuildingManager.Infrastructure.Expenses;
 using BuildingManager.Infrastructure.Invoicing;
 using BuildingManager.Infrastructure.Reports;
 using Microsoft.EntityFrameworkCore;
@@ -18,6 +19,8 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<BillingService>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<InvoiceService>();
+builder.Services.AddScoped<ExpenseService>();
+builder.Services.AddScoped<ProfitAndLossService>();
 builder.Services.AddHostedService<RentChargeWorker>();
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -38,6 +41,7 @@ api.MapSetupEndpoints();
 api.MapLeaseEndpoints();
 api.MapReportEndpoints();
 api.MapInvoiceEndpoints();
+api.MapExpenseEndpoints();
 
 // React client-side routes
 app.MapFallbackToFile("index.html");

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, type BusinessProfile } from '../api'
+import { api, type BusinessProfile, type ExpenseCategory, type ExpenseCategoryKind } from '../api'
 import { ErrorBanner, Field, PageHeader, Panel, useApi, useSubmit } from '../ui'
 
 export default function SettingsPage() {
@@ -59,6 +59,60 @@ export default function SettingsPage() {
         </div>
         <ErrorBanner message={saveError} />
       </form>
+
+      <CategoriesPanel />
     </>
+  )
+}
+
+function CategoriesPanel() {
+  const { data, error, reload } = useApi<ExpenseCategory[]>('/expense-categories')
+  const [name, setName] = useState('')
+  const [kind, setKind] = useState<ExpenseCategoryKind>('Operating')
+  const { error: saveError, saving, run } = useSubmit()
+
+  const save = async (c: ExpenseCategory, changes: Partial<ExpenseCategory>) => {
+    const next = { ...c, ...changes }
+    if (await run(() => api.put(`/expense-categories/${c.id}`, { name: next.name, kind: next.kind, isArchived: next.isArchived }))) void reload()
+  }
+  const rename = (c: ExpenseCategory) => {
+    const newName = prompt('Rename category', c.name)
+    if (newName && newName.trim() !== c.name) void save(c, { name: newName })
+  }
+  const add = async (e: FormEvent) => {
+    e.preventDefault()
+    if (await run(() => api.post('/expense-categories', { name, kind, isArchived: false }))) { setName(''); void reload() }
+  }
+
+  return (
+    <Panel title="Expense categories">
+      <ErrorBanner message={error ?? saveError} />
+      <table>
+        <thead><tr><th>Category</th><th>Type</th><th /></tr></thead>
+        <tbody>
+          {data?.map(c => (
+            <tr key={c.id} className={c.isArchived ? 'archived' : ''}>
+              <td>{c.name}{c.isArchived && <span className="badge">Archived</span>}</td>
+              <td>{c.kind === 'Capital' ? 'Capital (not in net income)' : 'Operating'}</td>
+              <td className="num">
+                <button className="link" onClick={() => rename(c)}>Rename</button>
+                <button className="link" onClick={() => save(c, { isArchived: !c.isArchived })}>{c.isArchived ? 'Restore' : 'Archive'}</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <form onSubmit={add} className="form-row compact">
+        <Field label="New category"><input value={name} onChange={e => setName(e.target.value)} required /></Field>
+        <Field label="Type">
+          <select value={kind} onChange={e => setKind(e.target.value as ExpenseCategoryKind)}>
+            <option value="Operating">Operating</option>
+            <option value="Capital">Capital (not in net income)</option>
+          </select>
+        </Field>
+        <div className="form-buttons"><button type="submit" disabled={saving}>Add category</button></div>
+      </form>
+      <p className="muted">Archived categories are hidden when adding expenses but stay on past expenses and in reports.</p>
+    </Panel>
   )
 }

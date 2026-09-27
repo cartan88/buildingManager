@@ -85,6 +85,14 @@ a.link-button { padding: 2px 6px; }
 .button.secondary-button { background: var(--surface); color: var(--text); border-color: var(--border); }
 .button.secondary-button:hover { background: #f0f2f5; }
 input.check { width: auto; }
+.form-row.compact-top { margin-bottom: 4px; }
+.form-row.compact-top .field { flex: 0 1 190px; min-width: 150px; }
+tr.archived td { color: var(--muted); }
+ul.receipts { margin: 0 0 12px; padding-left: 18px; }
+table.pnl td.indent { padding-left: 24px; }
+table.pnl tr.section-row td { font-weight: 600; padding-top: 16px; border-bottom: none; }
+table.pnl tr.subtotal td { font-weight: 600; border-top: 1px solid var(--text); }
+table.pnl tr.net td { font-weight: 700; font-size: 15px; background: var(--accent-soft); border-bottom: none; }
 
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; min-width: 0; }
 .field > span { font-size: 12px; font-weight: 600; color: var(--muted); }

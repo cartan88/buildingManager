@@ -1,6 +1,6 @@
 # Building Manager
 
-Rental property manager for a single Windows PC: properties, units, tenants, leases, automatic monthly rent billing, payments, overdue/aging tracking, numbered billing statements (PDF) and Excel reports. Amounts are in Philippine pesos (₱).
+Rental property manager for a single Windows PC: properties, units, tenants, leases, automatic monthly rent billing, payments, overdue/aging tracking, numbered billing statements (PDF), expenses with receipts, profit and loss per property, and Excel reports. Amounts are in Philippine pesos (₱).
 
 **Stack:** ASP.NET Core (.NET 10) API · EF Core · SQL Server Express · React + TypeScript (Vite) · ClosedXML (Excel) · QuestPDF (statements)
 
@@ -47,11 +47,22 @@ Then open http://localhost:5073.
 - **Statements → Export to Excel** gives the full register, including voided numbers, for your accountant.
 - PDFs use the Lato font bundled with QuestPDF, so they look identical on any PC.
 
+## Expenses and profit & loss
+
+- **Expenses** record a date, property (or *General* for costs like accounting fees), category, vendor, amount, payment method and reference, with receipt photos or PDFs attached (up to 10 MB each, stored in the database so backups include them). You can edit an expense to fix a mistake; to remove one, void it.
+- **Categories** come pre-loaded for Philippine rentals (repairs, utilities, association dues, real property tax/amilyar, insurance, loan interest, professional fees, permits & licenses, ...). Rename, add or archive them under Settings. *Capital* categories (renovations, furniture & appliances) are shown separately and left out of net income, since they are usually depreciated.
+- **Vendors** are created automatically the first time you type a new name. Names match ignoring case.
+- **Profit & loss** covers any date range, by property (plus a *General* column) or by month, and exports to Excel with live formulas and an expense detail sheet.
+  - **Cash basis** (the default) counts money received in the period, split by what it paid for (rent, utilities billed to tenants, late fees, other). Payments not yet applied to a charge show as *Advance payments*.
+  - **Accrual basis** counts charges billed in the period, paid or not.
+  - Security deposits are never counted as income.
+- The dashboard shows this month's money received, expenses and net income.
+
 ## Project layout
 
 ```
-src/BuildingManager.Core            entities + pure billing logic (rent schedule, allocation, aging)
-src/BuildingManager.Infrastructure  EF Core DbContext & migrations, billing and invoice services, PDF + Excel output
+src/BuildingManager.Core            entities + pure logic (rent schedule, allocation, aging, P&L layout)
+src/BuildingManager.Infrastructure  EF Core DbContext & migrations, billing/invoice/expense services, P&L, PDF + Excel output
 src/BuildingManager.Api             minimal-API endpoints, rent worker, serves the React build from wwwroot
 src/web                             React UI
 tests/BuildingManager.Tests         xUnit tests for the billing logic
@@ -73,8 +84,8 @@ dotnet ef migrations add <Name> -p src/BuildingManager.Infrastructure -s src/Bui
 
 ## Roadmap
 
-1. Expenses (vendors, categories, receipts) and profit and loss per property
-2. More Excel reports: rent roll, tenant ledger, monthly income, annual tax summary
+1. More Excel reports: rent roll, tenant ledger, annual tax summary
+2. Recurring expenses (e.g. monthly association dues)
 3. Lease expiry reminders, EWT/2307 tracking, bank CSV import
 4. Emailing statements to tenants
 

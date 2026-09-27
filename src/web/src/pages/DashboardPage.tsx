@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { type AgingRow, type Dashboard, formatDate } from '../api'
+import { type AgingRow, type Dashboard, type PnlReport, formatDate, monthEnd, monthStart, todayIso } from '../api'
 import { Empty, ErrorBanner, Money, PageHeader, Panel, useApi } from '../ui'
 
 export default function DashboardPage() {
   const { data, error } = useApi<Dashboard>('/dashboard')
   const aging = useApi<AgingRow[]>('/reports/aging')
+  const month = useApi<PnlReport>(`/reports/pnl?from=${monthStart(todayIso())}&to=${monthEnd(todayIso())}&basis=Cash`)
   const overdue = (aging.data ?? []).filter(r => r.bucket !== 'Current')
 
   return (
@@ -19,6 +20,15 @@ export default function DashboardPage() {
           <Stat label="Total receivable" value={<Money value={data.totalOutstanding} />} sub="Includes charges still within grace" />
           <Stat label="Tenant credit" value={<Money value={data.tenantCredit} />} sub="Advance payments not yet applied" />
           <Stat label="Occupancy" value={`${data.activeLeases} / ${data.units}`} sub="Active leases / units" />
+        </div>
+      )}
+
+      {month.data && (
+        <div className="stats">
+          <Stat label="Received this month" value={<Money value={month.data.income.total} />} sub="Cash basis" />
+          <Stat label="Expenses this month" value={<Money value={month.data.operatingExpenses.total} />}
+            sub={month.data.capitalExpenses.total ? `Plus capital items not counted` : 'Operating costs'} />
+          <Stat label="Net this month" value={<Money value={month.data.netIncome.total} />} sub={<Link to="/profit-loss">Profit & loss →</Link>} />
         </div>
       )}
 
@@ -46,7 +56,7 @@ export default function DashboardPage() {
   )
 }
 
-function Stat({ label, value, sub }: { label: string; value: ReactNode; sub: string }) {
+function Stat({ label, value, sub }: { label: string; value: ReactNode; sub: ReactNode }) {
   return (
     <div className="stat">
       <div className="stat-label">{label}</div>

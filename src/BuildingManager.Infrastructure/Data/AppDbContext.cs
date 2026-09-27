@@ -15,6 +15,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<BusinessProfile> BusinessProfiles => Set<BusinessProfile>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<InvoiceLine> InvoiceLines => Set<InvoiceLine>();
+    public DbSet<ExpenseCategory> ExpenseCategories => Set<ExpenseCategory>();
+    public DbSet<Vendor> Vendors => Set<Vendor>();
+    public DbSet<Expense> Expenses => Set<Expense>();
+    public DbSet<ExpenseReceipt> ExpenseReceipts => Set<ExpenseReceipt>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder builder)
     {
@@ -24,6 +28,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         builder.Properties<ChargeType>().HaveConversion<string>().HaveMaxLength(20);
         builder.Properties<PaymentMethod>().HaveConversion<string>().HaveMaxLength(20);
         builder.Properties<InvoiceStatus>().HaveConversion<string>().HaveMaxLength(20);
+        builder.Properties<ExpenseCategoryKind>().HaveConversion<string>().HaveMaxLength(20);
     }
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -96,6 +101,35 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         });
 
         b.Entity<InvoiceLine>(e => e.Property(x => x.Description).HasMaxLength(300));
+
+        b.Entity<ExpenseCategory>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.HasIndex(x => x.Name).IsUnique();
+            e.HasData(DefaultExpenseCategories.All);
+        });
+
+        b.Entity<Vendor>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.HasIndex(x => x.Name).IsUnique();
+            e.Property(x => x.Contact).HasMaxLength(200);
+            e.Property(x => x.Tin).HasMaxLength(20);
+        });
+
+        b.Entity<Expense>(e =>
+        {
+            e.Property(x => x.Description).HasMaxLength(300);
+            e.Property(x => x.Reference).HasMaxLength(100);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+            e.HasIndex(x => x.Date);
+        });
+
+        b.Entity<ExpenseReceipt>(e =>
+        {
+            e.Property(x => x.FileName).HasMaxLength(260);
+            e.Property(x => x.ContentType).HasMaxLength(100);
+        });
 
         // Financial history must never disappear through a cascade; SQL Server also rejects
         // the multiple cascade paths Lease -> Charge/Payment -> Allocation would create.

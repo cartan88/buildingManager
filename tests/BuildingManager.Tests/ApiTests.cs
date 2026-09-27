@@ -139,5 +139,53 @@ public class ApiTests : DatabaseTest
         Assert.Equal(HttpStatusCode.BadRequest, dup.StatusCode);
     }
 
+    [Fact]
+    public async Task Receipt_upload_and_download_round_trip_with_safe_headers()
+    {
+        var client = TrustedClient();
+        var created = await client.PostAsJsonAsync("/api/expenses", new
+        {
+            date = "2026-09-10", propertyId = (int?)null, categoryId = 1, vendorName = "Ace Hardware", description = "Faucet",
+            amount = 850, method = "Cash",
+        });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var expense = await created.Content.ReadFromJsonAsync<IdResponse>();
+
+        using var form = new MultipartFormDataContent();
+        var bytes = "%PDF-1.4 test"u8.ToArray();
+        var part = new ByteArrayContent(bytes);
+        // A name with quotes and non-ASCII characters, sent the RFC 5987 way.
+        part.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("form-data") { Name = "file", FileNameStar = "OR \"12\" ñ.pdf" };
+        form.Add(part);
+        var uploaded = await client.PostAsync($"/api/expenses/{expense!.Id}/receipts", form);
+        Assert.Equal(HttpStatusCode.OK, uploaded.StatusCode);
+        var receipt = await uploaded.Content.ReadFromJsonAsync<IdResponse>();
+
+        var download = await _factory.CreateClient().GetAsync($"/api/receipts/{receipt!.Id}");
+        Assert.Equal(bytes, await download.Content.ReadAsByteArrayAsync());
+        Assert.Equal("application/pdf", download.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("nosniff", download.Headers.GetValues("X-Content-Type-Options").Single());
+        Assert.Equal("OR \"12\" ñ.pdf", download.Content.Headers.ContentDisposition?.FileNameStar);
+
+        // Uploads are state-changing too: without the app's header they're refused.
+        using var sneaky = new MultipartFormDataContent { { new ByteArrayContent(bytes), "file", "x.pdf" } };
+        Assert.Equal(HttpStatusCode.Forbidden, (await _factory.CreateClient().PostAsync($"/api/expenses/{expense.Id}/receipts", sneaky)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Profit_and_loss_report_and_excel_export()
+    {
+        var client = TrustedClient();
+        var json = await client.GetAsync("/api/reports/pnl?from=2026-01-01&to=2026-12-31&basis=Accrual&by=Month");
+        Assert.Equal(HttpStatusCode.OK, json.StatusCode);
+        Assert.Contains("\"Dec 2026\"", await json.Content.ReadAsStringAsync());
+
+        var xlsx = await client.GetAsync("/api/reports/pnl.xlsx?from=2026-01-01&to=2026-12-31");
+        Assert.Equal(HttpStatusCode.OK, xlsx.StatusCode);
+        Assert.Equal("PK", System.Text.Encoding.ASCII.GetString((await xlsx.Content.ReadAsByteArrayAsync())[..2]));
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/reports/pnl?from=2026-12-31&to=2026-01-01")).StatusCode);
+    }
+
     private record IdResponse(int Id);
 }
