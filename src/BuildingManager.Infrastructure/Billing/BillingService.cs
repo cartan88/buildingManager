@@ -43,7 +43,7 @@ public class BillingService(AppDbContext db, TimeProvider clock)
                     Description = p.Description,
                     PeriodStart = p.PeriodStart,
                     DueDate = p.DueDate,
-                    Amount = lease.MonthlyRent,
+                    Amount = lease.Rent,
                 }));
                 await db.SaveChangesAsync(ct);
                 await AllocateAsync(leaseId, ct);

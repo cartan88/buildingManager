@@ -2,11 +2,12 @@ import { useState, type FormEvent } from 'react'
 import { api, type Tenant } from '../api'
 import { Empty, ErrorBanner, Field, PageHeader, Panel, useApi, useSubmit } from '../ui'
 
-type TenantForm = { fullName: string; phone: string; email: string; tin: string; notes: string }
-const blank: TenantForm = { fullName: '', phone: '', email: '', tin: '', notes: '' }
+type TenantForm = { fullName: string; phone: string; email: string; tin: string; businessType: string; notes: string }
+const blank: TenantForm = { fullName: '', phone: '', email: '', tin: '', businessType: '', notes: '' }
 
 export default function TenantsPage() {
   const { data, error, reload } = useApi<Tenant[]>('/tenants')
+  const businessTypes = useApi<string[]>('/tenants/business-types')
   const [editing, setEditing] = useState<{ id?: number; form: TenantForm }>()
   const { error: saveError, saving, run } = useSubmit()
 
@@ -18,7 +19,7 @@ export default function TenantsPage() {
     if (!editing) return
     const body = Object.fromEntries(Object.entries(editing.form).map(([k, v]) => [k, v.trim() || null]))
     const ok = await run(() => editing.id ? api.put(`/tenants/${editing.id}`, body) : api.post('/tenants', body))
-    if (ok) { setEditing(undefined); void reload() }
+    if (ok) { setEditing(undefined); void reload(); void businessTypes.reload() }
   }
 
   const [showInactive, setShowInactive] = useState(false)
@@ -52,6 +53,10 @@ export default function TenantsPage() {
               <Field label="Mobile / phone"><input value={editing.form.phone} onChange={set('phone')} placeholder="09xx xxx xxxx" /></Field>
               <Field label="Email"><input type="email" value={editing.form.email} onChange={set('email')} /></Field>
               <Field label="TIN" hint="Needed on invoices for business tenants"><input value={editing.form.tin} onChange={set('tin')} placeholder="000-000-000-000" /></Field>
+              <Field label="Type of business" hint="Pick one already used, or type a new one">
+                <input value={editing.form.businessType} onChange={set('businessType')} list="business-types" maxLength={100} placeholder="e.g. Sari-sari store, Residential" />
+                <datalist id="business-types">{businessTypes.data?.map(b => <option key={b} value={b} />)}</datalist>
+              </Field>
             </div>
             <Field label="Notes"><textarea value={editing.form.notes} onChange={set('notes')} rows={2} /></Field>
             <div className="form-buttons">
@@ -66,11 +71,12 @@ export default function TenantsPage() {
       <Panel>
         {data?.length === 0 ? <Empty>No tenants yet.</Empty> : shown?.length === 0 ? <Empty>No active tenants. Tick "Show inactive tenants" to see the rest.</Empty> : (
           <table>
-            <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>TIN</th><th>Status</th><th /></tr></thead>
+            <thead><tr><th>Name</th><th>Type of business</th><th>Phone</th><th>Email</th><th>TIN</th><th>Status</th><th /></tr></thead>
             <tbody>
               {shown?.map(t => (
                 <tr key={t.id} className={t.isActive ? undefined : 'inactive'}>
                   <td>{t.fullName}</td>
+                  <td>{t.businessType ?? '—'}</td>
                   <td>{t.phone ?? '—'}</td>
                   <td>{t.email ?? '—'}</td>
                   <td>{t.tin ?? '—'}</td>
@@ -78,7 +84,10 @@ export default function TenantsPage() {
                   <td className="num">
                     <button className="link" onClick={() => setEditing({
                       id: t.id,
-                      form: { fullName: t.fullName, phone: t.phone ?? '', email: t.email ?? '', tin: t.tin ?? '', notes: t.notes ?? '' },
+                      form: {
+                        fullName: t.fullName, phone: t.phone ?? '', email: t.email ?? '', tin: t.tin ?? '',
+                        businessType: t.businessType ?? '', notes: t.notes ?? '',
+                      },
                     })}>Edit</button>
                     {t.isActive
                       ? t.activeLeases === 0 && <button className="link" onClick={() => setActive(t, false)}>Mark inactive</button>

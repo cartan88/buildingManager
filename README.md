@@ -33,12 +33,14 @@ Then open http://localhost:5073.
 - **Ending a lease** (or shortening it) voids rent already billed for periods that start after the end date, and re-applies any money paid towards them. If the lease is later extended, those periods are billed again. Rent you voided by hand stays voided.
 - **"As of" reports** replay payments using only money received by that date, so month-end reports for past months stay accurate.
 - **Concurrency:** all billing work on a lease runs in a transaction holding a SQL Server app lock for that lease, so the background job and your own actions can't apply the same money twice.
+- **Daily leases** (for transient or bedspace rentals) are charged the daily rate every day, each charge due that day. A lease is daily or monthly from the start and can't be switched; end it and create a new one instead.
 - Rent due on the 29th–31st moves to the last day of shorter months.
 - Changing a lease's rent affects future charges only.
 
 ## Billing statements
 
 - Fill in **Settings** first: your name, TIN, address, contact details and payment instructions, all printed on every statement.
+- **Branding:** your business name and logo (Settings → Logo: PNG, JPG or WEBP, up to 2 MB) are shown at the top of the app and in the browser tab title. The logo is also printed above your name on statements; without one, statements show just the name. Each statement keeps the logo it was issued with, even if you later replace or remove it.
 - **Create statement** on a lease lists its unpaid charges, arrears included, and you can untick any you want to leave off. **Statements → Issue statements for all** does the monthly run in one go. It skips tenants whose unpaid charges are already all on a live statement, so running it twice doesn't create duplicates.
 - **Numbering:** `BS-2026-0001`, `BS-2026-0002`, ... is sequential per year with no gaps, even when statements are issued at the same time. The prefix is configurable.
 - **Statements never change once issued.** Everything printed is copied onto the statement and the exact PDF is stored in the database. Editing a tenant or your settings later only affects future statements.

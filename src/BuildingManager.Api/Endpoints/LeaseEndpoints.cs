@@ -6,9 +6,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BuildingManager.Api.Endpoints;
 
-public record LeaseInput(int UnitId, int TenantId, DateOnly StartDate, DateOnly? EndDate, decimal MonthlyRent,
-    int DueDay, int GracePeriodDays, decimal SecurityDeposit, string? Notes);
-public record LeaseUpdate(DateOnly? EndDate, decimal MonthlyRent, int DueDay, int GracePeriodDays, decimal SecurityDeposit, string? Notes);
+public record LeaseInput(int UnitId, int TenantId, DateOnly StartDate, DateOnly? EndDate, decimal Rent,
+    int DueDay, int GracePeriodDays, decimal SecurityDeposit, string? Notes, RentFrequency Frequency = RentFrequency.Monthly);
+/// <summary>Frequency isn't here: it's fixed when the lease is created.</summary>
+public record LeaseUpdate(DateOnly? EndDate, decimal Rent, int DueDay, int GracePeriodDays, decimal SecurityDeposit, string? Notes);
 public record EndLeaseInput(DateOnly EndDate);
 public record ChargeInput(ChargeType Type, string Description, DateOnly DueDate, decimal Amount);
 public record PaymentInput(DateOnly PaymentDate, decimal Amount, PaymentMethod Method, string? Reference, string? Notes);
@@ -22,7 +23,7 @@ public static class LeaseEndpoints
                 .OrderBy(l => l.Status).ThenBy(l => l.Unit!.Property!.Name).ThenBy(l => l.Unit!.Name)
                 .Select(l => new
                 {
-                    l.Id, l.Status, l.StartDate, l.EndDate, l.MonthlyRent, l.DueDay,
+                    l.Id, l.Status, l.StartDate, l.EndDate, l.Frequency, l.Rent, l.DueDay,
                     Property = l.Unit!.Property!.Name, Unit = l.Unit.Name, Tenant = l.Tenant!.FullName,
                     Balance = (l.Charges.Where(c => !c.IsVoided).Sum(c => (decimal?)c.Amount) ?? 0)
                               - (l.Payments.Where(p => !p.IsVoided).Sum(p => (decimal?)p.Amount) ?? 0),
@@ -34,7 +35,7 @@ public static class LeaseEndpoints
                 .Where(l => l.Id == id)
                 .Select(l => new
                 {
-                    l.Id, l.UnitId, l.TenantId, l.Status, l.StartDate, l.EndDate, l.MonthlyRent, l.DueDay,
+                    l.Id, l.UnitId, l.TenantId, l.Status, l.StartDate, l.EndDate, l.Frequency, l.Rent, l.DueDay,
                     l.GracePeriodDays, l.SecurityDeposit, l.Notes,
                     Property = l.Unit!.Property!.Name, Unit = l.Unit.Name,
                     Tenant = l.Tenant!.FullName, l.Tenant.Phone, l.Tenant.Email,
@@ -47,7 +48,10 @@ public static class LeaseEndpoints
 
         api.MapPost("/leases", async (LeaseInput input, AppDbContext db, BillingService billing) =>
         {
-            if (Validate(input.StartDate, input.EndDate, input.MonthlyRent, input.DueDay, input.GracePeriodDays, input.SecurityDeposit) is { } error)
+            if (!Enum.IsDefined(input.Frequency)) return Validation.Fail("frequency", "Choose monthly or daily rent.");
+            // Daily rent is due every day, so the due day doesn't apply.
+            var dueDay = input.Frequency == RentFrequency.Daily ? 1 : input.DueDay;
+            if (Validate(input.StartDate, input.EndDate, input.Rent, dueDay, input.GracePeriodDays, input.SecurityDeposit) is { } error)
                 return error;
             if (!await db.Units.AnyAsync(u => u.Id == input.UnitId)) return Validation.Fail("unitId", "Unit not found.");
             var tenantActive = await db.Tenants.Where(t => t.Id == input.TenantId).Select(t => (bool?)t.IsActive).FirstOrDefaultAsync();
@@ -59,7 +63,7 @@ public static class LeaseEndpoints
             var lease = new Lease
             {
                 UnitId = input.UnitId, TenantId = input.TenantId, StartDate = input.StartDate, EndDate = input.EndDate,
-                MonthlyRent = input.MonthlyRent, DueDay = input.DueDay, GracePeriodDays = input.GracePeriodDays,
+                Frequency = input.Frequency, Rent = input.Rent, DueDay = dueDay, GracePeriodDays = input.GracePeriodDays,
                 SecurityDeposit = input.SecurityDeposit, Notes = input.Notes,
             };
             db.Leases.Add(lease);
@@ -74,11 +78,12 @@ public static class LeaseEndpoints
         {
             var lease = await db.Leases.FindAsync(id);
             if (lease is null) return Results.NotFound();
-            if (Validate(lease.StartDate, input.EndDate, input.MonthlyRent, input.DueDay, input.GracePeriodDays, input.SecurityDeposit) is { } error)
+            var dueDay = lease.Frequency == RentFrequency.Daily ? lease.DueDay : input.DueDay;
+            if (Validate(lease.StartDate, input.EndDate, input.Rent, dueDay, input.GracePeriodDays, input.SecurityDeposit) is { } error)
                 return error;
 
-            (lease.EndDate, lease.MonthlyRent, lease.DueDay, lease.GracePeriodDays, lease.SecurityDeposit, lease.Notes) =
-                (input.EndDate, input.MonthlyRent, input.DueDay, input.GracePeriodDays, input.SecurityDeposit, input.Notes);
+            (lease.EndDate, lease.Rent, lease.DueDay, lease.GracePeriodDays, lease.SecurityDeposit, lease.Notes) =
+                (input.EndDate, input.Rent, dueDay, input.GracePeriodDays, input.SecurityDeposit, input.Notes);
             await db.SaveChangesAsync();
             await billing.VoidRentAfterEndAsync(id);
             await billing.GenerateRentChargesAsync(); // re-bills periods if the term was extended
@@ -151,7 +156,7 @@ public static class LeaseEndpoints
     private static IResult? Validate(DateOnly start, DateOnly? end, decimal rent, int dueDay, int grace, decimal deposit)
     {
         if (end is { } e && e < start) return Validation.Fail("endDate", "End date is before the start date.");
-        if (rent <= 0) return Validation.Fail("monthlyRent", "Monthly rent must be more than zero.");
+        if (rent <= 0) return Validation.Fail("rent", "Rent must be more than zero.");
         if (dueDay is < 1 or > 31) return Validation.Fail("dueDay", "Due day must be between 1 and 31.");
         if (grace is < 0 or > 60) return Validation.Fail("gracePeriodDays", "Grace period must be 0–60 days.");
         if (deposit < 0) return Validation.Fail("securityDeposit", "Deposit can't be negative.");

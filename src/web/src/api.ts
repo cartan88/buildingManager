@@ -1,6 +1,9 @@
 // Thin typed wrapper over the .NET API. Dates travel as "yyyy-MM-dd" strings.
 
 export type LeaseStatus = 'Active' | 'Ended'
+export type RentFrequency = 'Monthly' | 'Daily'
+/** "/day" or "/month", for showing a lease's rent. */
+export const perPeriod = (f: RentFrequency) => f === 'Daily' ? '/day' : '/month'
 export type ChargeType = 'Rent' | 'Utility' | 'LateFee' | 'Other'
 export type PaymentMethod = 'Cash' | 'BankTransfer' | 'GCash' | 'Maya' | 'Check' | 'Other'
 export type AgingBucket = 'Current' | 'Days1To30' | 'Days31To60' | 'Days61To90' | 'Over90'
@@ -8,17 +11,17 @@ export type AgingBucket = 'Current' | 'Days1To30' | 'Days31To60' | 'Days61To90' 
 export interface UnitSummary { id: number; name: string; defaultMonthlyRent: number; notes?: string; currentTenant?: string; hasLeases: boolean }
 export interface Property { id: number; name: string; address?: string; notes?: string; units: UnitSummary[] }
 export interface Tenant {
-  id: number; fullName: string; email?: string; phone?: string; tin?: string; notes?: string
+  id: number; fullName: string; email?: string; phone?: string; tin?: string; businessType?: string; notes?: string
   isActive: boolean; activeLeases: number; totalLeases: number
 }
 
 export interface LeaseSummary {
-  id: number; status: LeaseStatus; startDate: string; endDate?: string; monthlyRent: number; dueDay: number
+  id: number; status: LeaseStatus; startDate: string; endDate?: string; frequency: RentFrequency; rent: number; dueDay: number
   property: string; unit: string; tenant: string; balance: number
 }
 export interface LeaseInfo {
   id: number; unitId: number; tenantId: number; status: LeaseStatus; startDate: string; endDate?: string
-  monthlyRent: number; dueDay: number; gracePeriodDays: number; securityDeposit: number; notes?: string
+  frequency: RentFrequency; rent: number; dueDay: number; gracePeriodDays: number; securityDeposit: number; notes?: string
   property: string; unit: string; tenant: string; phone?: string; email?: string
 }
 export interface LedgerEntry {
@@ -48,6 +51,14 @@ export interface BusinessProfile {
   name: string; address?: string; tin?: string; contact?: string; paymentInstructions?: string
   documentTitle: string; numberPrefix: string; footerNote?: string; defaultDueDays: number
 }
+
+/** Business name and logo shown in the sidebar. logoVersion is null when no logo is uploaded. */
+export interface Branding { name?: string; logoVersion?: number }
+export const logoUrl = (b: Branding) => b.logoVersion ? `/api/settings/logo?v=${b.logoVersion}` : undefined
+
+/** Tells the sidebar to reload the branding after the name or logo changes in Settings. */
+export const BRANDING_CHANGED = 'branding-changed'
+export const notifyBrandingChanged = () => window.dispatchEvent(new Event(BRANDING_CHANGED))
 
 export const paymentStatusLabels: Record<InvoicePaymentStatus, string> = {
   Unpaid: 'Unpaid', PartiallyPaid: 'Partially paid', Paid: 'Paid', Voided: 'Void',

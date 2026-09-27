@@ -6,7 +6,7 @@ namespace BuildingManager.Core.Billing;
 public record RentPeriod(DateOnly PeriodStart, DateOnly PeriodEnd, DateOnly DueDate, string Description);
 
 /// <summary>
-/// Works out which monthly rent charges a lease should have. Pure logic: no database access,
+/// Works out which rent charges a lease should have: one per month, or one per day for a daily lease. Pure logic: no database access,
 /// so the generator can compare this against existing charges and only add what's missing.
 /// </summary>
 public static class RentSchedule
@@ -14,7 +14,18 @@ public static class RentSchedule
     private static readonly CultureInfo PhCulture = CultureInfo.GetCultureInfo("en-PH");
 
     /// <summary>All rent periods that have started or fallen due on or before <paramref name="asOf"/>.</summary>
-    public static IEnumerable<RentPeriod> PeriodsThrough(Lease lease, DateOnly asOf)
+    public static IEnumerable<RentPeriod> PeriodsThrough(Lease lease, DateOnly asOf) =>
+        lease.Frequency == RentFrequency.Daily ? DailyPeriodsThrough(lease, asOf) : MonthlyPeriodsThrough(lease, asOf);
+
+    /// <summary>Each day is its own period, due that same day.</summary>
+    private static IEnumerable<RentPeriod> DailyPeriodsThrough(Lease lease, DateOnly asOf)
+    {
+        var last = lease.EndDate is { } end && end < asOf ? end : asOf;
+        for (var day = lease.StartDate; day <= last; day = day.AddDays(1))
+            yield return new RentPeriod(day, day, day, $"Rent – {day.ToString("d MMM yyyy", PhCulture)}");
+    }
+
+    private static IEnumerable<RentPeriod> MonthlyPeriodsThrough(Lease lease, DateOnly asOf)
     {
         for (var i = 0; ; i++)
         {

@@ -42,7 +42,7 @@ public abstract class DatabaseTest : IAsyncLifetime
         {
             Unit = new Unit { Name = "Unit 1A", Property = new Property { Name = "Test Apartments" } },
             Tenant = new Tenant { FullName = "Juan Dela Cruz" },
-            StartDate = DateOnly.Parse(start), MonthlyRent = rent, DueDay = dueDay, GracePeriodDays = grace,
+            StartDate = DateOnly.Parse(start), Rent = rent, DueDay = dueDay, GracePeriodDays = grace,
         };
         db.Leases.Add(lease);
         await db.SaveChangesAsync();

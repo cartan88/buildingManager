@@ -1,4 +1,7 @@
+import { useEffect } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
+import { BRANDING_CHANGED, logoUrl, type Branding } from './api'
+import { useApi } from './ui'
 import DashboardPage from './pages/DashboardPage'
 import PropertiesPage from './pages/PropertiesPage'
 import TenantsPage from './pages/TenantsPage'
@@ -22,16 +25,42 @@ const nav = [
   { to: '/settings', label: 'Settings' },
 ]
 
+/** The business name and logo, kept up to date when they change in Settings. */
+function useBranding() {
+  const { data, reload } = useApi<Branding>('/settings/branding')
+  useEffect(() => {
+    const onChange = () => void reload()
+    window.addEventListener(BRANDING_CHANGED, onChange)
+    return () => window.removeEventListener(BRANDING_CHANGED, onChange)
+  }, [reload])
+  return data
+}
+
+function Brand({ data }: { data?: Branding }) {
+  const name = data?.name ?? 'Building Manager'
+  useEffect(() => { document.title = name }, [name])
+  const logo = data && logoUrl(data)
+
+  return (
+    <div className="brand">
+      {logo && <img src={logo} alt="" className="brand-logo" />}
+      <span className="brand-name">{name}</span>
+    </div>
+  )
+}
+
 export default function App() {
+  const branding = useBranding()
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand">Building Manager</div>
+        <Brand data={branding} />
         <nav>
           {nav.map(n => (
             <NavLink key={n.to} to={n.to} end={n.end}>{n.label}</NavLink>
           ))}
         </nav>
+        <p className="copyright">© {new Date().getFullYear()} {branding?.name ?? 'Building Manager'}</p>
       </aside>
       <main className="content">
         <Routes>

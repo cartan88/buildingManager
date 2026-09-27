@@ -37,6 +37,26 @@ public static class InvoiceEndpoints
             return Results.NoContent();
         });
 
+        g.MapGet("/settings/branding", async (InvoiceService invoices) => await invoices.GetBrandingAsync());
+
+        g.MapGet("/settings/logo", async (InvoiceService invoices, HttpContext http) =>
+        {
+            if (await invoices.GetLogoAsync() is not { } logo) return Results.NotFound();
+            http.Response.Headers.XContentTypeOptions = "nosniff";
+            return Results.File(logo.Content, logo.ContentType);
+        });
+
+        // Cross-site uploads are already blocked by CrossSiteGuard's custom-header check.
+        g.MapPost("/settings/logo", async (IFormFile file, InvoiceService invoices) =>
+        {
+            await using var stream = file.OpenReadStream();
+            await invoices.SaveLogoAsync(file.FileName, stream, file.Length);
+            return Results.Ok(await invoices.GetBrandingAsync());
+        }).DisableAntiforgery();
+
+        g.MapDelete("/settings/logo", async (InvoiceService invoices) =>
+            await invoices.RemoveLogoAsync() ? Results.NoContent() : Results.NotFound());
+
         g.MapGet("/invoices", async (int? leaseId, InvoiceService invoices) => await invoices.ListAsync(leaseId));
 
         g.MapGet("/invoices.xlsx", async (InvoiceService invoices, BillingService billing) =>

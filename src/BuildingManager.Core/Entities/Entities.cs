@@ -29,6 +29,8 @@ public class Tenant
     public string? Phone { get; set; }
     /// <summary>BIR Taxpayer Identification Number, needed for invoices to business tenants.</summary>
     public string? Tin { get; set; }
+    /// <summary>What the tenant uses the space for, e.g. "Sari-sari store" or "Residential". Free text.</summary>
+    public string? BusinessType { get; set; }
     public string? Notes { get; set; }
     /// <summary>Inactive tenants (e.g. former tenants) are hidden from lists and can't be given new leases. Their history is kept.</summary>
     public bool IsActive { get; set; } = true;
@@ -36,6 +38,9 @@ public class Tenant
 }
 
 public enum LeaseStatus { Active = 0, Ended = 1 }
+
+/// <summary>How often rent is charged: once a month on the due day, or every day (e.g. transient or bedspace rentals).</summary>
+public enum RentFrequency { Monthly = 0, Daily = 1 }
 
 public class Lease
 {
@@ -48,8 +53,11 @@ public class Lease
     public DateOnly StartDate { get; set; }
     /// <summary>Null means month-to-month / open-ended.</summary>
     public DateOnly? EndDate { get; set; }
-    public decimal MonthlyRent { get; set; }
-    /// <summary>Day of month rent is due (1-31). Clamped to the last day in shorter months.</summary>
+    /// <summary>Monthly or daily. Fixed once the lease is created, so its rent periods never change shape.</summary>
+    public RentFrequency Frequency { get; set; } = RentFrequency.Monthly;
+    /// <summary>Rent per period: per month, or per day for a daily lease.</summary>
+    public decimal Rent { get; set; }
+    /// <summary>Day of month rent is due (1-31). Clamped to the last day in shorter months. Not used by daily leases.</summary>
     public int DueDay { get; set; } = 1;
     /// <summary>Days after the due date before a charge counts as overdue.</summary>
     public int GracePeriodDays { get; set; }

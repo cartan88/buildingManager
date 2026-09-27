@@ -4,6 +4,7 @@ using BuildingManager.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BuildingManager.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260927130515_BusinessLogo")]
+    partial class BusinessLogo
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -451,9 +454,6 @@ namespace BuildingManager.Infrastructure.Data.Migrations
                     b.Property<int>("LeaseId")
                         .HasColumnType("int");
 
-                    b.Property<int?>("LogoId")
-                        .HasColumnType("int");
-
                     b.Property<string>("Notes")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
@@ -519,8 +519,6 @@ namespace BuildingManager.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("LeaseId");
-
-                    b.HasIndex("LogoId");
 
                     b.HasIndex("Number")
                         .IsUnique();
@@ -591,20 +589,15 @@ namespace BuildingManager.Infrastructure.Data.Migrations
                     b.Property<DateOnly?>("EndDate")
                         .HasColumnType("date");
 
-                    b.Property<string>("Frequency")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
                     b.Property<int>("GracePeriodDays")
                         .HasColumnType("int");
 
-                    b.Property<string>("Notes")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal>("Rent")
+                    b.Property<decimal>("MonthlyRent")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal>("SecurityDeposit")
                         .HasPrecision(18, 2)
@@ -728,36 +721,6 @@ namespace BuildingManager.Infrastructure.Data.Migrations
                     b.ToTable("Properties");
                 });
 
-            modelBuilder.Entity("BuildingManager.Core.Entities.StatementLogo", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<byte[]>("Content")
-                        .IsRequired()
-                        .HasColumnType("varbinary(max)");
-
-                    b.Property<string>("ContentType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("Sha256")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Sha256")
-                        .IsUnique();
-
-                    b.ToTable("StatementLogos");
-                });
-
             modelBuilder.Entity("BuildingManager.Core.Entities.Tenant", b =>
                 {
                     b.Property<int>("Id")
@@ -765,10 +728,6 @@ namespace BuildingManager.Infrastructure.Data.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("BusinessType")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("Email")
                         .HasMaxLength(200)
@@ -916,14 +875,7 @@ namespace BuildingManager.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("BuildingManager.Core.Entities.StatementLogo", "Logo")
-                        .WithMany()
-                        .HasForeignKey("LogoId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.Navigation("Lease");
-
-                    b.Navigation("Logo");
                 });
 
             modelBuilder.Entity("BuildingManager.Core.Entities.InvoiceLine", b =>

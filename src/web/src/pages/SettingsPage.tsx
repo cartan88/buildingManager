@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, type BusinessProfile, type ExpenseCategory, type ExpenseCategoryKind } from '../api'
+import { api, logoUrl, notifyBrandingChanged, uploadFile, type Branding, type BusinessProfile, type ExpenseCategory, type ExpenseCategoryKind } from '../api'
 import { ErrorBanner, Field, PageHeader, Panel, useApi, useSubmit } from '../ui'
 
 export default function SettingsPage() {
@@ -18,12 +18,13 @@ export default function SettingsPage() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (await run(() => api.put('/settings/business', f))) setSaved(true)
+    if (await run(() => api.put('/settings/business', f))) { setSaved(true); notifyBrandingChanged() }
   }
 
   return (
     <>
       <PageHeader title="Settings" />
+      <LogoPanel />
       <form onSubmit={submit}>
         <Panel title="Your details on statements">
           <div className="form-grid">
@@ -62,6 +63,37 @@ export default function SettingsPage() {
 
       <CategoriesPanel />
     </>
+  )
+}
+
+function LogoPanel() {
+  const { data, reload } = useApi<Branding>('/settings/branding')
+  const { error, saving, run } = useSubmit()
+  const logo = data && logoUrl(data)
+
+  const changed = () => { void reload(); notifyBrandingChanged() }
+  const upload = async (e: { target: HTMLInputElement }) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow picking the same file again
+    if (file && await run(() => uploadFile('/settings/logo', file))) changed()
+  }
+  const remove = async () => {
+    if (confirm('Remove the logo?') && await run(() => api.del('/settings/logo'))) changed()
+  }
+
+  return (
+    <Panel title="Logo">
+      <div className="logo-row">
+        {logo ? <img src={logo} alt="Current logo" className="logo-preview" /> : <span className="muted">No logo yet.</span>}
+        <label className="button secondary-button">
+          {logo ? 'Replace logo' : 'Upload logo'}
+          <input type="file" accept=".png,.jpg,.jpeg,.webp" onChange={upload} disabled={saving} hidden />
+        </label>
+        {logo && <button type="button" className="link danger" onClick={remove} disabled={saving}>Remove</button>}
+      </div>
+      <p className="muted">Shown with your business name at the top of the app and on statements issued from now on. PNG, JPG or WEBP, up to 2 MB. A PNG with a transparent background looks best on the dark sidebar.</p>
+      <ErrorBanner message={error} />
+    </Panel>
   )
 }
 

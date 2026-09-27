@@ -6,7 +6,7 @@ namespace BuildingManager.Api.Endpoints;
 
 public record PropertyInput(string Name, string? Address, string? Notes);
 public record UnitInput(string Name, decimal DefaultMonthlyRent, string? Notes);
-public record TenantInput(string FullName, string? Email, string? Phone, string? Tin, string? Notes);
+public record TenantInput(string FullName, string? Email, string? Phone, string? Tin, string? Notes, string? BusinessType = null);
 
 /// <summary>Properties, units and tenants: the reference data everything else hangs off.</summary>
 public static class SetupEndpoints
@@ -86,10 +86,14 @@ public static class SetupEndpoints
             return await db.Units.Where(u => u.Id == id).ExecuteDeleteAsync() > 0 ? Results.NoContent() : Results.NotFound();
         });
 
+        // Lets the tenant form suggest types already in use, so the same business is spelled the same way.
+        api.MapGet("/tenants/business-types", async (AppDbContext db) =>
+            await db.Tenants.Where(t => t.BusinessType != null).Select(t => t.BusinessType!).Distinct().OrderBy(x => x).ToListAsync());
+
         api.MapGet("/tenants", async (AppDbContext db) =>
             await db.Tenants.OrderBy(t => t.FullName).Select(t => new
             {
-                t.Id, t.FullName, t.Email, t.Phone, t.Tin, t.Notes, t.IsActive,
+                t.Id, t.FullName, t.Email, t.Phone, t.Tin, t.BusinessType, t.Notes, t.IsActive,
                 ActiveLeases = t.Leases.Count(l => l.Status == LeaseStatus.Active),
                 TotalLeases = t.Leases.Count,
             }).ToListAsync());
@@ -97,7 +101,12 @@ public static class SetupEndpoints
         api.MapPost("/tenants", async (TenantInput input, AppDbContext db) =>
         {
             if (string.IsNullOrWhiteSpace(input.FullName)) return Validation.Fail("fullName", "Name is required.");
-            var t = new Tenant { FullName = input.FullName.Trim(), Email = input.Email, Phone = input.Phone, Tin = input.Tin, Notes = input.Notes };
+            if (input.BusinessType?.Trim().Length > 100) return Validation.Fail("businessType", "Type of business can be up to 100 characters.");
+            var t = new Tenant
+            {
+                FullName = input.FullName.Trim(), Email = input.Email, Phone = input.Phone, Tin = input.Tin,
+                BusinessType = Clean(input.BusinessType), Notes = input.Notes,
+            };
             db.Tenants.Add(t);
             await db.SaveChangesAsync();
             return Results.Created($"/api/tenants/{t.Id}", new { t.Id });
@@ -106,9 +115,11 @@ public static class SetupEndpoints
         api.MapPut("/tenants/{id:int}", async (int id, TenantInput input, AppDbContext db) =>
         {
             if (string.IsNullOrWhiteSpace(input.FullName)) return Validation.Fail("fullName", "Name is required.");
+            if (input.BusinessType?.Trim().Length > 100) return Validation.Fail("businessType", "Type of business can be up to 100 characters.");
             var t = await db.Tenants.FindAsync(id);
             if (t is null) return Results.NotFound();
-            (t.FullName, t.Email, t.Phone, t.Tin, t.Notes) = (input.FullName.Trim(), input.Email, input.Phone, input.Tin, input.Notes);
+            (t.FullName, t.Email, t.Phone, t.Tin, t.BusinessType, t.Notes) =
+                (input.FullName.Trim(), input.Email, input.Phone, input.Tin, Clean(input.BusinessType), input.Notes);
             await db.SaveChangesAsync();
             return Results.NoContent();
         });
@@ -140,6 +151,8 @@ public static class SetupEndpoints
             return await db.Tenants.Where(t => t.Id == id).ExecuteDeleteAsync() > 0 ? Results.NoContent() : Results.NotFound();
         });
     }
+
+    private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }
 
 internal static class Validation

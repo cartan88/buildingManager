@@ -23,6 +23,17 @@ public class BusinessProfile
     public int DefaultDueDays { get; set; } = 7;
 }
 
+/// <summary>The business logo shown in the app. Kept apart from <see cref="BusinessProfile"/> so the image isn't loaded with every settings read.</summary>
+public class BusinessLogo
+{
+    public const int SingletonId = 1;
+
+    public int Id { get; set; } = SingletonId;
+    public required string ContentType { get; set; }
+    public byte[] Content { get; set; } = [];
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
 public enum InvoiceStatus { Issued = 0, Voided = 1 }
 
 /// <summary>
@@ -64,10 +75,26 @@ public class Invoice
     /// <summary>Amount due on the statement: the sum of the lines' balances.</summary>
     public decimal Total { get; set; }
 
+    /// <summary>The logo printed on the statement, if there was one when it was issued.</summary>
+    public int? LogoId { get; set; }
+    public StatementLogo? Logo { get; set; }
+
     /// <summary>The PDF exactly as issued.</summary>
     public byte[] Pdf { get; set; } = [];
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public List<InvoiceLine> Lines { get; set; } = [];
+}
+
+/// <summary>
+/// A logo as printed on issued statements, kept so a voided statement re-renders with its original logo even
+/// after the logo is replaced or removed. Stored once per distinct image (by SHA-256), not once per statement.
+/// </summary>
+public class StatementLogo
+{
+    public int Id { get; set; }
+    public required string Sha256 { get; set; }
+    public required string ContentType { get; set; }
+    public byte[] Content { get; set; } = [];
 }
 
 public class InvoiceLine

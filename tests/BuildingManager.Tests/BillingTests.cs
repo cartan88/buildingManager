@@ -8,7 +8,7 @@ public class RentScheduleTests
     private static Lease Lease(string start, int dueDay = 1, string? end = null) => new()
     {
         StartDate = DateOnly.Parse(start), EndDate = end is null ? null : DateOnly.Parse(end),
-        DueDay = dueDay, MonthlyRent = 15000m,
+        DueDay = dueDay, Rent = 15000m,
     };
 
     [Fact]
@@ -31,6 +31,31 @@ public class RentScheduleTests
             periods.Select(p => p.DueDate));
         // Offsetting from the start date keeps later periods on the 31st instead of drifting to the 28th.
         Assert.Equal(DateOnly.Parse("2026-03-31"), periods[2].PeriodStart);
+    }
+
+    [Fact]
+    public void Daily_lease_bills_one_charge_per_day_due_that_day()
+    {
+        var lease = Lease("2026-09-25");
+        lease.Frequency = RentFrequency.Daily;
+
+        var periods = RentSchedule.PeriodsThrough(lease, DateOnly.Parse("2026-09-27")).ToList();
+
+        Assert.Equal([DateOnly.Parse("2026-09-25"), DateOnly.Parse("2026-09-26"), DateOnly.Parse("2026-09-27")], periods.Select(p => p.DueDate));
+        Assert.All(periods, p => Assert.Equal(p.PeriodStart, p.PeriodEnd));
+        Assert.Equal("Rent – 27 Sep 2026", periods[2].Description);
+    }
+
+    [Fact]
+    public void Daily_lease_stops_at_end_date_and_ignores_due_day()
+    {
+        var lease = Lease("2026-09-01", dueDay: 15, end: "2026-09-10");
+        lease.Frequency = RentFrequency.Daily;
+
+        var periods = RentSchedule.PeriodsThrough(lease, DateOnly.Parse("2026-12-31")).ToList();
+
+        Assert.Equal(10, periods.Count);
+        Assert.Equal(DateOnly.Parse("2026-09-01"), periods[0].DueDate);
     }
 
     [Fact]

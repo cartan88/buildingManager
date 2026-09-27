@@ -1,5 +1,6 @@
 using BuildingManager.Core.Entities;
 using BuildingManager.Infrastructure.Data;
+using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 
 namespace BuildingManager.Infrastructure.Invoicing;
@@ -19,8 +20,22 @@ public record InvoiceSummary(
     int Id, int LeaseId, string Number, DateOnly IssueDate, DateOnly DueDate, InvoiceStatus Status, string? VoidReason,
     string TenantName, string PropertyName, string UnitName, decimal Total, decimal StillOwed, InvoicePaymentStatus PaymentStatus);
 
+/// <summary>What the app shows at the top of the sidebar. LogoVersion changes whenever the logo does, for cache-busting.</summary>
+public record Branding(string? Name, long? LogoVersion);
+
 public class InvoiceService(AppDbContext db)
 {
+    public const long MaxLogoBytes = 2 * 1024 * 1024;
+
+    /// <summary>Raster images only: an SVG can carry script, so it's refused.</summary>
+    public static readonly IReadOnlyDictionary<string, string> AllowedLogoTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        [".png"] = "image/png",
+        [".jpg"] = "image/jpeg",
+        [".jpeg"] = "image/jpeg",
+        [".webp"] = "image/webp",
+    };
+
     public async Task<BusinessProfile> GetProfileAsync(CancellationToken ct = default) =>
         await db.BusinessProfiles.FindAsync([BusinessProfile.SingletonId], ct) ?? new BusinessProfile();
 
@@ -46,6 +61,41 @@ public class InvoiceService(AppDbContext db)
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task<Branding> GetBrandingAsync(CancellationToken ct = default)
+    {
+        var name = await db.BusinessProfiles.Where(p => p.Id == BusinessProfile.SingletonId).Select(p => p.Name).FirstOrDefaultAsync(ct);
+        var logoUpdated = await db.BusinessLogos.Where(l => l.Id == BusinessLogo.SingletonId).Select(l => (DateTime?)l.UpdatedAt).FirstOrDefaultAsync(ct);
+        // Milliseconds rather than ticks: ticks are too large for a JavaScript number.
+        var version = logoUpdated is { } u ? new DateTimeOffset(DateTime.SpecifyKind(u, DateTimeKind.Utc)).ToUnixTimeMilliseconds() : (long?)null;
+        return new Branding(string.IsNullOrWhiteSpace(name) ? null : name, version);
+    }
+
+    public Task<BusinessLogo?> GetLogoAsync(CancellationToken ct = default) =>
+        db.BusinessLogos.AsNoTracking().FirstOrDefaultAsync(l => l.Id == BusinessLogo.SingletonId, ct);
+
+    /// <summary>Replaces the logo, if there is one.</summary>
+    public async Task SaveLogoAsync(string fileName, Stream content, long length, CancellationToken ct = default)
+    {
+        if (length == 0) throw new InvoiceValidationException("file", "The file is empty.");
+        if (length > MaxLogoBytes) throw new InvoiceValidationException("file", "The logo can be up to 2 MB.");
+        if (!AllowedLogoTypes.TryGetValue(Path.GetExtension(Path.GetFileName(fileName)), out var contentType))
+            throw new InvoiceValidationException("file", "Upload the logo as a PNG, JPG or WEBP image.");
+
+        using var ms = new MemoryStream();
+        await content.CopyToAsync(ms, ct);
+        // Checked now so a broken image can't make issuing statements fail later.
+        try { QuestPDF.Infrastructure.Image.FromBinaryData(ms.ToArray()).Dispose(); }
+        catch { throw new InvoiceValidationException("file", "That file isn't a readable image."); }
+
+        var logo = await db.BusinessLogos.FindAsync([BusinessLogo.SingletonId], ct);
+        if (logo is null) db.BusinessLogos.Add(logo = new BusinessLogo { ContentType = contentType });
+        (logo.ContentType, logo.Content, logo.UpdatedAt) = (contentType, ms.ToArray(), DateTime.UtcNow);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<bool> RemoveLogoAsync(CancellationToken ct = default) =>
+        await db.BusinessLogos.Where(l => l.Id == BusinessLogo.SingletonId).ExecuteDeleteAsync(ct) > 0;
+
     /// <summary>
     /// Issues a numbered statement for the lease's unpaid charges. Numbers are sequential per year with no
     /// gaps, even when several statements are issued at once.
@@ -58,6 +108,7 @@ public class InvoiceService(AppDbContext db)
 
         var dueDate = request.DueDate ?? request.IssueDate.AddDays(profile.DefaultDueDays);
         if (dueDate < request.IssueDate) throw new InvoiceValidationException("dueDate", "Due date is before the issue date.");
+        var logo = await CurrentStatementLogoAsync(ct);
 
         Invoice? invoice = null;
         // Lease lock first, then the numbering lock: always in this order, so batches can't deadlock.
@@ -108,6 +159,7 @@ public class InvoiceService(AppDbContext db)
                     PropertyAddress = lease.Address,
                     UnitName = lease.Unit,
                     Notes = Clean(request.Notes),
+                    Logo = logo,
                     Lines = chosen.Select((c, i) => new InvoiceLine
                     {
                         ChargeId = c.Id, SortOrder = i, Description = c.Description, DueDate = c.DueDate,
@@ -122,6 +174,26 @@ public class InvoiceService(AppDbContext db)
             }, ct);
         }, ct);
         return invoice!;
+    }
+
+    /// <summary>The current logo as a <see cref="StatementLogo"/>, reusing the stored copy if this image was printed before.</summary>
+    private async Task<StatementLogo?> CurrentStatementLogoAsync(CancellationToken ct)
+    {
+        if (await GetLogoAsync(ct) is not { } current) return null;
+        var hash = Convert.ToHexString(SHA256.HashData(current.Content));
+        var existing = await db.StatementLogos.FirstOrDefaultAsync(l => l.Sha256 == hash, ct);
+        if (existing is not null) return existing;
+
+        var created = new StatementLogo { Sha256 = hash, ContentType = current.ContentType, Content = current.Content };
+        db.StatementLogos.Add(created);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException)
+        {
+            // Another statement saved the same image first (batch issuing); use that one.
+            db.Entry(created).State = EntityState.Detached;
+            return await db.StatementLogos.FirstAsync(l => l.Sha256 == hash, ct);
+        }
+        return created;
     }
 
     /// <summary>
@@ -165,7 +237,7 @@ public class InvoiceService(AppDbContext db)
     /// </summary>
     public async Task<(string Number, byte[] Pdf)?> GetPdfAsync(int invoiceId, CancellationToken ct = default)
     {
-        var invoice = await db.Invoices.AsNoTracking().Include(i => i.Lines).FirstOrDefaultAsync(i => i.Id == invoiceId, ct);
+        var invoice = await db.Invoices.AsNoTracking().Include(i => i.Lines).Include(i => i.Logo).FirstOrDefaultAsync(i => i.Id == invoiceId, ct);
         if (invoice is null) return null;
         return (invoice.Number, invoice.Status == InvoiceStatus.Voided ? InvoicePdf.Render(invoice) : invoice.Pdf);
     }

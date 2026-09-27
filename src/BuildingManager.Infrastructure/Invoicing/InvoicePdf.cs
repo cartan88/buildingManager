@@ -53,6 +53,9 @@ public static class InvoicePdf
     {
         row.RelativeItem().Column(col =>
         {
+            // Statements issued without a logo just show the name.
+            if (inv.Logo is { } logo)
+                col.Item().PaddingBottom(6).Height(56).MaxWidth(200).AlignLeft().Image(logo.Content).FitArea();
             col.Item().Text(inv.BusinessName).FontSize(16).Bold();
             if (!string.IsNullOrWhiteSpace(inv.BusinessAddress)) col.Item().Text(inv.BusinessAddress);
             if (!string.IsNullOrWhiteSpace(inv.BusinessTin)) col.Item().Text($"TIN: {inv.BusinessTin}");

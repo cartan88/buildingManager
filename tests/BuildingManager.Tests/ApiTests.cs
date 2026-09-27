@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using BuildingManager.Api;
+using BuildingManager.Core.Entities;
 using BuildingManager.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -93,7 +94,7 @@ public class ApiTests : DatabaseTest
         var start = DateOnly.FromDateTime(DateTime.Today).AddYears(-1);
         var lease = await (await client.PostAsJsonAsync("/api/leases", new
         {
-            unitId = unit!.Id, tenantId = tenant!.Id, startDate = start, monthlyRent = 12000, dueDay = start.Day,
+            unitId = unit!.Id, tenantId = tenant!.Id, startDate = start, rent = 12000, dueDay = start.Day,
             gracePeriodDays = 0, securityDeposit = 0,
         })).Content.ReadFromJsonAsync<IdResponse>();
 
@@ -119,7 +120,7 @@ public class ApiTests : DatabaseTest
         var start = DateOnly.FromDateTime(DateTime.Today).AddMonths(-1);
         var lease = await (await client.PostAsJsonAsync("/api/leases", new
         {
-            unitId = unit!.Id, tenantId = tenant!.Id, startDate = start, monthlyRent = 12000, dueDay = start.Day, gracePeriodDays = 0, securityDeposit = 0,
+            unitId = unit!.Id, tenantId = tenant!.Id, startDate = start, rent = 12000, dueDay = start.Day, gracePeriodDays = 0, securityDeposit = 0,
         })).Content.ReadFromJsonAsync<IdResponse>();
 
         var issued = await client.PostAsJsonAsync($"/api/leases/{lease!.Id}/invoices", new { issueDate = DateOnly.FromDateTime(DateTime.Today) });
@@ -196,7 +197,7 @@ public class ApiTests : DatabaseTest
             .Content.ReadFromJsonAsync<IdResponse>();
         var tenant = await (await client.PostAsJsonAsync("/api/tenants", new { fullName = "Juan Dela Cruz" })).Content.ReadFromJsonAsync<IdResponse>();
         var start = DateOnly.FromDateTime(DateTime.Today);
-        var leaseInput = new { unitId = unit!.Id, tenantId = tenant!.Id, startDate = start, monthlyRent = 12000, dueDay = start.Day, gracePeriodDays = 0, securityDeposit = 0 };
+        var leaseInput = new { unitId = unit!.Id, tenantId = tenant!.Id, startDate = start, rent = 12000, dueDay = start.Day, gracePeriodDays = 0, securityDeposit = 0 };
         var lease = await (await client.PostAsJsonAsync("/api/leases", leaseInput)).Content.ReadFromJsonAsync<IdResponse>();
 
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync($"/api/tenants/{tenant.Id}/deactivate", null)).StatusCode);
@@ -213,5 +214,145 @@ public class ApiTests : DatabaseTest
         Assert.True(await db.Tenants.Where(t => t.Id == tenant.Id).Select(t => t.IsActive).SingleAsync());
     }
 
+    [Fact]
+    public async Task Logo_upload_replace_and_remove_round_trip()
+    {
+        var client = TrustedClient();
+        var png = TinyPng;
+
+        Assert.Null((await client.GetFromJsonAsync<BrandingResponse>("/api/settings/branding"))!.LogoVersion);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/settings/logo")).StatusCode);
+
+        // SVG can carry script, so only raster images are accepted.
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync("/api/settings/logo", Upload("logo.svg", "<svg/>"u8.ToArray()))).StatusCode);
+        // A file named .png that isn't really an image would break statement PDFs later.
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync("/api/settings/logo", Upload("logo.png", [1, 2, 3]))).StatusCode);
+
+        var uploaded = await client.PostAsync("/api/settings/logo", Upload("logo.png", png));
+        Assert.Equal(HttpStatusCode.OK, uploaded.StatusCode);
+        var first = (await uploaded.Content.ReadFromJsonAsync<BrandingResponse>())!.LogoVersion;
+        Assert.NotNull(first);
+
+        var logo = await client.GetAsync("/api/settings/logo");
+        Assert.Equal("image/png", logo.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(png, await logo.Content.ReadAsByteArrayAsync());
+
+        var replaced = await (await client.PostAsync("/api/settings/logo", Upload("new-logo.png", png)))
+            .Content.ReadFromJsonAsync<BrandingResponse>();
+        Assert.NotEqual(first, replaced!.LogoVersion); // new version so browsers don't show the cached old logo
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync("/api/settings/logo")).StatusCode);
+        Assert.Null((await client.GetFromJsonAsync<BrandingResponse>("/api/settings/branding"))!.LogoVersion);
+    }
+
+    [Fact]
+    public async Task Statements_keep_the_logo_they_were_issued_with()
+    {
+        var client = TrustedClient();
+        await client.PutAsJsonAsync("/api/settings/business", new { name = "Sample Owner", documentTitle = "Billing Statement", numberPrefix = "BS", defaultDueDays = 7 });
+        var property = await (await client.PostAsJsonAsync("/api/properties", new { name = "Test Apartments" })).Content.ReadFromJsonAsync<IdResponse>();
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        async Task<int> NewLease(string unitName)
+        {
+            var unit = await (await client.PostAsJsonAsync($"/api/properties/{property!.Id}/units", new { name = unitName, defaultMonthlyRent = 12000 })).Content.ReadFromJsonAsync<IdResponse>();
+            var tenant = await (await client.PostAsJsonAsync("/api/tenants", new { fullName = $"Tenant {unitName}" })).Content.ReadFromJsonAsync<IdResponse>();
+            var start = today.AddMonths(-1);
+            var lease = await (await client.PostAsJsonAsync("/api/leases", new
+            {
+                unitId = unit!.Id, tenantId = tenant!.Id, startDate = start, rent = 12000, dueDay = start.Day, gracePeriodDays = 0, securityDeposit = 0,
+            })).Content.ReadFromJsonAsync<IdResponse>();
+            return lease!.Id;
+        }
+        async Task<int> Issue(int leaseId) =>
+            (await (await client.PostAsJsonAsync($"/api/leases/{leaseId}/invoices", new { issueDate = today })).Content.ReadFromJsonAsync<IdResponse>())!.Id;
+
+        var withoutLogo = await Issue(await NewLease("1A"));
+        await client.PostAsync("/api/settings/logo", Upload("logo.png", TinyPng));
+        var withLogo = await Issue(await NewLease("1B"));
+        var sameLogo = await Issue(await NewLease("1C"));
+
+        await using (var db = NewContext())
+        {
+            Assert.Null(await db.Invoices.Where(i => i.Id == withoutLogo).Select(i => i.LogoId).SingleAsync());
+            Assert.NotNull(await db.Invoices.Where(i => i.Id == withLogo).Select(i => i.LogoId).SingleAsync());
+            Assert.Equal(1, await db.StatementLogos.CountAsync()); // the same image is stored once, however many statements use it
+            Assert.Equal(
+                await db.Invoices.Where(i => i.Id == withLogo).Select(i => i.LogoId).SingleAsync(),
+                await db.Invoices.Where(i => i.Id == sameLogo).Select(i => i.LogoId).SingleAsync());
+        }
+
+        // Removing the logo doesn't touch issued statements: a void copy is re-rendered with its original logo.
+        await client.DeleteAsync("/api/settings/logo");
+        await client.PostAsJsonAsync($"/api/invoices/{withLogo}/void", new { reason = "test" });
+        var pdf = await client.GetAsync($"/api/invoices/{withLogo}/pdf");
+        Assert.Equal(HttpStatusCode.OK, pdf.StatusCode);
+        await using (var db = NewContext())
+            Assert.NotNull(await db.Invoices.Where(i => i.Id == withLogo).Select(i => i.LogoId).SingleAsync());
+    }
+
+    [Fact]
+    public async Task Daily_lease_is_billed_every_day_at_the_daily_rate()
+    {
+        var client = TrustedClient();
+        var property = await (await client.PostAsJsonAsync("/api/properties", new { name = "Bedspace House" })).Content.ReadFromJsonAsync<IdResponse>();
+        var unit = await (await client.PostAsJsonAsync($"/api/properties/{property!.Id}/units", new { name = "Bed 1", defaultMonthlyRent = 6000 }))
+            .Content.ReadFromJsonAsync<IdResponse>();
+        var tenant = await (await client.PostAsJsonAsync("/api/tenants", new { fullName = "Juan Dela Cruz" })).Content.ReadFromJsonAsync<IdResponse>();
+        var start = DateOnly.FromDateTime(DateTime.Today).AddDays(-4); // five days so far, today included
+        var created = await client.PostAsJsonAsync("/api/leases", new
+        {
+            unitId = unit!.Id, tenantId = tenant!.Id, startDate = start, frequency = "Daily", rent = 500, dueDay = 1,
+            gracePeriodDays = 0, securityDeposit = 0,
+        });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var lease = await created.Content.ReadFromJsonAsync<IdResponse>();
+
+        await using (var db = NewContext())
+        {
+            var rent = await db.Charges.Where(c => c.LeaseId == lease!.Id && c.Type == ChargeType.Rent).OrderBy(c => c.DueDate).ToListAsync();
+            Assert.Equal(5, rent.Count);
+            Assert.All(rent, c => Assert.Equal(500m, c.Amount));
+            Assert.Equal(start, rent[0].DueDate);
+        }
+
+        // The frequency is fixed: an edit keeps the lease daily and can't set a due day on it.
+        var edit = await client.PutAsJsonAsync($"/api/leases/{lease!.Id}", new { rent = 550, dueDay = 20, gracePeriodDays = 0, securityDeposit = 0, frequency = "Monthly" });
+        Assert.Equal(HttpStatusCode.NoContent, edit.StatusCode);
+        await using (var db = NewContext())
+        {
+            var saved = await db.Leases.SingleAsync(l => l.Id == lease.Id);
+            Assert.Equal(RentFrequency.Daily, saved.Frequency);
+            Assert.Equal(550m, saved.Rent);
+            Assert.Equal(1, saved.DueDay);
+        }
+    }
+
+    [Fact]
+    public async Task Tenant_type_of_business_is_saved_trimmed_and_suggested()
+    {
+        var client = TrustedClient();
+        var created = await (await client.PostAsJsonAsync("/api/tenants", new { fullName = "Aling Nena", businessType = "  Sari-sari store " }))
+            .Content.ReadFromJsonAsync<IdResponse>();
+        await client.PostAsJsonAsync("/api/tenants", new { fullName = "Mang Tomas", businessType = "Sari-sari store" });
+        await client.PostAsJsonAsync("/api/tenants", new { fullName = "Juan Dela Cruz", businessType = "   " }); // blank = none
+
+        var tenants = await client.GetFromJsonAsync<List<TenantRow>>("/api/tenants");
+        Assert.Equal("Sari-sari store", tenants!.Single(t => t.Id == created!.Id).BusinessType);
+        Assert.Null(tenants!.Single(t => t.FullName == "Juan Dela Cruz").BusinessType);
+        Assert.Equal(["Sari-sari store"], await client.GetFromJsonAsync<List<string>>("/api/tenants/business-types"));
+
+        var tooLong = await client.PutAsJsonAsync($"/api/tenants/{created!.Id}", new { fullName = "Aling Nena", businessType = new string('x', 101) });
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+    }
+
+    private record TenantRow(int Id, string FullName, string? BusinessType);
+
+    /// <summary>A valid 1×1 PNG.</summary>
+    private static readonly byte[] TinyPng = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+
+    private static MultipartFormDataContent Upload(string name, byte[] bytes) => new() { { new ByteArrayContent(bytes), "file", name } };
+
     private record IdResponse(int Id);
+    private record BrandingResponse(string? Name, long? LogoVersion);
 }

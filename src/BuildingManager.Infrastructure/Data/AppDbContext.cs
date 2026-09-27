@@ -13,6 +13,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<PaymentAllocation> PaymentAllocations => Set<PaymentAllocation>();
     public DbSet<BusinessProfile> BusinessProfiles => Set<BusinessProfile>();
+    public DbSet<BusinessLogo> BusinessLogos => Set<BusinessLogo>();
+    public DbSet<StatementLogo> StatementLogos => Set<StatementLogo>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<InvoiceLine> InvoiceLines => Set<InvoiceLine>();
     public DbSet<ExpenseCategory> ExpenseCategories => Set<ExpenseCategory>();
@@ -25,6 +27,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         builder.Properties<decimal>().HavePrecision(18, 2);
         // Enums stored as text so the tables stay readable when querying in SSMS.
         builder.Properties<LeaseStatus>().HaveConversion<string>().HaveMaxLength(20);
+        builder.Properties<RentFrequency>().HaveConversion<string>().HaveMaxLength(20);
         builder.Properties<ChargeType>().HaveConversion<string>().HaveMaxLength(20);
         builder.Properties<PaymentMethod>().HaveConversion<string>().HaveMaxLength(20);
         builder.Properties<InvoiceStatus>().HaveConversion<string>().HaveMaxLength(20);
@@ -51,6 +54,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Email).HasMaxLength(200);
             e.Property(x => x.Phone).HasMaxLength(50);
             e.Property(x => x.Tin).HasMaxLength(20);
+            e.Property(x => x.BusinessType).HasMaxLength(100);
         });
 
         b.Entity<Charge>(e =>
@@ -64,6 +68,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         });
 
         b.Entity<Payment>(e => e.Property(x => x.Reference).HasMaxLength(100));
+
+        b.Entity<BusinessLogo>(e =>
+        {
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.ContentType).HasMaxLength(100);
+        });
+
+        b.Entity<StatementLogo>(e =>
+        {
+            e.Property(x => x.Sha256).HasMaxLength(64);
+            e.HasIndex(x => x.Sha256).IsUnique();
+            e.Property(x => x.ContentType).HasMaxLength(100);
+        });
 
         b.Entity<BusinessProfile>(e =>
         {
@@ -82,6 +99,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.Property(x => x.Number).HasMaxLength(30);
             e.HasIndex(x => x.Number).IsUnique();
+            e.HasOne(x => x.Logo).WithMany().HasForeignKey(x => x.LogoId).OnDelete(DeleteBehavior.Restrict);
             // Backstop for the numbering lock: a number can never be issued twice.
             e.HasIndex(x => new { x.Year, x.Sequence }).IsUnique();
             e.Property(x => x.VoidReason).HasMaxLength(300);
