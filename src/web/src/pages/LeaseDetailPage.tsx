@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { addDays, api, formatDate, formatPeso, paymentMethodLabels, todayIso, type BusinessProfile, type ChargeType, type InvoiceSummary, type LeaseDetail, type LedgerEntry, type OpenCharge, type PaymentMethod } from '../api'
+import { addDays, api, formatDate, formatPeso, paymentMethodLabels, todayIso, type BusinessProfile, type ChargeType, type InvoiceSummary, type LeaseDetail, type LeaseInfo, type LedgerEntry, type OpenCharge, type PaymentMethod } from '../api'
 import { InvoiceTable } from '../invoiceUi'
 import { Empty, ErrorBanner, Field, Money, PageHeader, Panel, useApi, useSubmit } from '../ui'
 
-type Mode = 'payment' | 'charge' | 'statement' | 'end' | null
+type Mode = 'payment' | 'charge' | 'statement' | 'edit' | 'end' | null
 
 export default function LeaseDetailPage() {
   const { id } = useParams()
@@ -32,6 +32,7 @@ export default function LeaseDetailPage() {
           <button onClick={() => setMode('payment')}>Record payment</button>
           <button className="secondary" onClick={() => setMode('charge')}>Add charge</button>
           <button className="secondary" onClick={() => setMode('statement')}>Create statement</button>
+          <button className="secondary" onClick={() => setMode('edit')}>Edit lease</button>
           <button className="secondary" onClick={() => setMode('end')}>End lease</button>
         </>}
       </PageHeader>
@@ -54,6 +55,7 @@ export default function LeaseDetailPage() {
       {mode === 'payment' && <PaymentForm leaseId={lease.id} suggested={Math.max(balance, 0)} onDone={done} onCancel={() => setMode(null)} />}
       {mode === 'charge' && <ChargeForm leaseId={lease.id} onDone={done} onCancel={() => setMode(null)} />}
       {mode === 'statement' && <StatementForm leaseId={lease.id} onDone={done} onCancel={() => setMode(null)} />}
+      {mode === 'edit' && <EditLeaseForm lease={lease} onDone={done} onCancel={() => setMode(null)} />}
       {mode === 'end' && <EndLeaseForm leaseId={lease.id} onDone={done} onCancel={() => setMode(null)} />}
 
       <Panel title="Ledger">
@@ -215,6 +217,48 @@ function ChargeForm({ leaseId, onDone, onCancel }: { leaseId: number; onDone: ()
           <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
         </div>
       </form>
+      <ErrorBanner message={error} />
+    </Panel>
+  )
+}
+
+function EditLeaseForm({ lease, onDone, onCancel }: { lease: LeaseInfo; onDone: () => void; onCancel: () => void }) {
+  const [f, setF] = useState({
+    monthlyRent: String(lease.monthlyRent), dueDay: String(lease.dueDay), gracePeriodDays: String(lease.gracePeriodDays),
+    endDate: lease.endDate ?? '', securityDeposit: String(lease.securityDeposit), notes: lease.notes ?? '',
+  })
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value }))
+  const { error, saving, run } = useSubmit()
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    const ok = await run(() => api.put(`/leases/${lease.id}`, {
+      monthlyRent: Number(f.monthlyRent), dueDay: Number(f.dueDay), gracePeriodDays: Number(f.gracePeriodDays) || 0,
+      endDate: f.endDate || null, securityDeposit: Number(f.securityDeposit) || 0, notes: f.notes.trim() || null,
+    }))
+    if (ok) onDone()
+  }
+
+  return (
+    <Panel title="Edit lease">
+      <form onSubmit={submit}>
+        <div className="form-grid">
+          <Field label="Monthly rent (₱)" hint="Applies to rent not yet billed; past charges stay as they are">
+            <input type="number" min="0.01" step="0.01" value={f.monthlyRent} onChange={set('monthlyRent')} required autoFocus /></Field>
+          <Field label="Due day" hint="29th–31st moves to the last day of shorter months">
+            <input type="number" min="1" max="31" value={f.dueDay} onChange={set('dueDay')} required /></Field>
+          <Field label="Grace period (days)"><input type="number" min="0" max="60" value={f.gracePeriodDays} onChange={set('gracePeriodDays')} /></Field>
+          <Field label="Contract end date" hint="Leave blank for open-ended. To record a move-out, use End lease">
+            <input type="date" value={f.endDate} min={lease.startDate} onChange={set('endDate')} /></Field>
+          <Field label="Security deposit held (₱)"><input type="number" min="0" step="0.01" value={f.securityDeposit} onChange={set('securityDeposit')} /></Field>
+        </div>
+        <Field label="Notes"><textarea rows={2} value={f.notes} onChange={set('notes')} /></Field>
+        <div className="form-buttons">
+          <button type="submit" disabled={saving}>Save</button>
+          <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
+        </div>
+      </form>
+      <p className="muted">Tenant, unit and start date can't be changed. To correct them, end this lease and create a new one.</p>
       <ErrorBanner message={error} />
     </Panel>
   )
