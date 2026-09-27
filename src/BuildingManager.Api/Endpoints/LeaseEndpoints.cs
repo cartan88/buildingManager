@@ -50,7 +50,9 @@ public static class LeaseEndpoints
             if (Validate(input.StartDate, input.EndDate, input.MonthlyRent, input.DueDay, input.GracePeriodDays, input.SecurityDeposit) is { } error)
                 return error;
             if (!await db.Units.AnyAsync(u => u.Id == input.UnitId)) return Validation.Fail("unitId", "Unit not found.");
-            if (!await db.Tenants.AnyAsync(t => t.Id == input.TenantId)) return Validation.Fail("tenantId", "Tenant not found.");
+            var tenantActive = await db.Tenants.Where(t => t.Id == input.TenantId).Select(t => (bool?)t.IsActive).FirstOrDefaultAsync();
+            if (tenantActive is null) return Validation.Fail("tenantId", "Tenant not found.");
+            if (tenantActive is false) return Validation.Fail("tenantId", "This tenant is inactive. Reactivate them first.");
             if (await db.Leases.AnyAsync(l => l.UnitId == input.UnitId && l.Status == LeaseStatus.Active))
                 return Validation.Fail("unitId", "This unit already has an active lease. End it first.");
 

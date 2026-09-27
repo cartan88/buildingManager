@@ -20,6 +20,7 @@ public static class SetupEndpoints
                 Units = p.Units.OrderBy(u => u.Name).Select(u => new
                 {
                     u.Id, u.Name, u.DefaultMonthlyRent, u.Notes,
+                    HasLeases = u.Leases.Any(),
                     CurrentTenant = u.Leases.Where(l => l.Status == LeaseStatus.Active)
                         .Select(l => l.Tenant!.FullName).FirstOrDefault(),
                 }),
@@ -88,8 +89,9 @@ public static class SetupEndpoints
         api.MapGet("/tenants", async (AppDbContext db) =>
             await db.Tenants.OrderBy(t => t.FullName).Select(t => new
             {
-                t.Id, t.FullName, t.Email, t.Phone, t.Tin, t.Notes,
+                t.Id, t.FullName, t.Email, t.Phone, t.Tin, t.Notes, t.IsActive,
                 ActiveLeases = t.Leases.Count(l => l.Status == LeaseStatus.Active),
+                TotalLeases = t.Leases.Count,
             }).ToListAsync());
 
         api.MapPost("/tenants", async (TenantInput input, AppDbContext db) =>
@@ -111,10 +113,30 @@ public static class SetupEndpoints
             return Results.NoContent();
         });
 
+        api.MapPost("/tenants/{id:int}/deactivate", async (int id, AppDbContext db) =>
+        {
+            var t = await db.Tenants.FindAsync(id);
+            if (t is null) return Results.NotFound();
+            if (await db.Leases.AnyAsync(l => l.TenantId == id && l.Status == LeaseStatus.Active))
+                return Validation.Fail("tenant", "This tenant has an active lease. End it first.");
+            t.IsActive = false;
+            await db.SaveChangesAsync();
+            return Results.NoContent();
+        });
+
+        api.MapPost("/tenants/{id:int}/activate", async (int id, AppDbContext db) =>
+        {
+            var t = await db.Tenants.FindAsync(id);
+            if (t is null) return Results.NotFound();
+            t.IsActive = true;
+            await db.SaveChangesAsync();
+            return Results.NoContent();
+        });
+
         api.MapDelete("/tenants/{id:int}", async (int id, AppDbContext db) =>
         {
             if (await db.Leases.AnyAsync(l => l.TenantId == id))
-                return Validation.Fail("tenant", "This tenant has lease history and can't be deleted.");
+                return Validation.Fail("tenant", "This tenant has lease history and can't be deleted. Mark them inactive instead.");
             return await db.Tenants.Where(t => t.Id == id).ExecuteDeleteAsync() > 0 ? Results.NoContent() : Results.NotFound();
         });
     }

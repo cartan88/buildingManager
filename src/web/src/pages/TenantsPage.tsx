@@ -21,13 +21,25 @@ export default function TenantsPage() {
     if (ok) { setEditing(undefined); void reload() }
   }
 
+  const [showInactive, setShowInactive] = useState(false)
+  const shown = data?.filter(t => showInactive || t.isActive)
+  const inactiveCount = data?.filter(t => !t.isActive).length ?? 0
+
   const remove = async (t: Tenant) => {
     if (confirm(`Delete ${t.fullName}?`) && await run(() => api.del(`/tenants/${t.id}`))) void reload()
+  }
+
+  const setActive = async (t: Tenant, active: boolean) => {
+    if (await run(() => api.post(`/tenants/${t.id}/${active ? 'activate' : 'deactivate'}`))) void reload()
   }
 
   return (
     <>
       <PageHeader title="Tenants">
+        <label className="toggle">
+          <input type="checkbox" className="check" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
+          Show inactive tenants{inactiveCount > 0 && ` (${inactiveCount})`}
+        </label>
         {!editing && <button onClick={() => setEditing({ form: blank })}>Add tenant</button>}
       </PageHeader>
       <ErrorBanner message={error ?? (editing ? undefined : saveError)} />
@@ -52,23 +64,27 @@ export default function TenantsPage() {
       )}
 
       <Panel>
-        {data?.length === 0 ? <Empty>No tenants yet.</Empty> : (
+        {data?.length === 0 ? <Empty>No tenants yet.</Empty> : shown?.length === 0 ? <Empty>No active tenants. Tick "Show inactive tenants" to see the rest.</Empty> : (
           <table>
             <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>TIN</th><th>Status</th><th /></tr></thead>
             <tbody>
-              {data?.map(t => (
-                <tr key={t.id}>
+              {shown?.map(t => (
+                <tr key={t.id} className={t.isActive ? undefined : 'inactive'}>
                   <td>{t.fullName}</td>
                   <td>{t.phone ?? '—'}</td>
                   <td>{t.email ?? '—'}</td>
                   <td>{t.tin ?? '—'}</td>
-                  <td>{t.activeLeases > 0 ? <span className="badge badge-ok">Active lease</span> : <span className="badge">No active lease</span>}</td>
+                  <td>{t.isActive ? <span className="badge badge-ok">Active</span> : <span className="badge">Inactive</span>}</td>
                   <td className="num">
                     <button className="link" onClick={() => setEditing({
                       id: t.id,
                       form: { fullName: t.fullName, phone: t.phone ?? '', email: t.email ?? '', tin: t.tin ?? '', notes: t.notes ?? '' },
                     })}>Edit</button>
-                    {t.activeLeases === 0 && <button className="link danger" onClick={() => remove(t)}>Delete</button>}
+                    {t.isActive
+                      ? t.activeLeases === 0 && <button className="link" onClick={() => setActive(t, false)}>Mark inactive</button>
+                      : <button className="link" onClick={() => setActive(t, true)}>Reactivate</button>}
+                    <button className="link danger" onClick={() => remove(t)} disabled={t.activeLeases > 0}
+                      title={t.activeLeases > 0 ? 'End the active lease first' : undefined}>Delete</button>
                   </td>
                 </tr>
               ))}

@@ -30,6 +30,8 @@ public class Tenant
     /// <summary>BIR Taxpayer Identification Number, needed for invoices to business tenants.</summary>
     public string? Tin { get; set; }
     public string? Notes { get; set; }
+    /// <summary>Inactive tenants (e.g. former tenants) are hidden from lists and can't be given new leases. Their history is kept.</summary>
+    public bool IsActive { get; set; } = true;
     public List<Lease> Leases { get; set; } = [];
 }
 

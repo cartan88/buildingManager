@@ -89,7 +89,7 @@ function NewLeaseForm({ onCancel }: { onCancel: () => void }) {
           <Field label="Tenant">
             <select value={f.tenantId} onChange={set('tenantId')} required>
               <option value="">Choose a tenant…</option>
-              {tenants.data?.map(t => <option key={t.id} value={t.id}>{t.fullName}</option>)}
+              {tenants.data?.filter(t => t.isActive).map(t => <option key={t.id} value={t.id}>{t.fullName}</option>)}
             </select>
           </Field>
           <Field label="Start date"><input type="date" value={f.startDate} onChange={e => pickStart(e.target.value)} required /></Field>

@@ -5,9 +5,12 @@ export type ChargeType = 'Rent' | 'Utility' | 'LateFee' | 'Other'
 export type PaymentMethod = 'Cash' | 'BankTransfer' | 'GCash' | 'Maya' | 'Check' | 'Other'
 export type AgingBucket = 'Current' | 'Days1To30' | 'Days31To60' | 'Days61To90' | 'Over90'
 
-export interface UnitSummary { id: number; name: string; defaultMonthlyRent: number; notes?: string; currentTenant?: string }
+export interface UnitSummary { id: number; name: string; defaultMonthlyRent: number; notes?: string; currentTenant?: string; hasLeases: boolean }
 export interface Property { id: number; name: string; address?: string; notes?: string; units: UnitSummary[] }
-export interface Tenant { id: number; fullName: string; email?: string; phone?: string; tin?: string; notes?: string; activeLeases: number }
+export interface Tenant {
+  id: number; fullName: string; email?: string; phone?: string; tin?: string; notes?: string
+  isActive: boolean; activeLeases: number; totalLeases: number
+}
 
 export interface LeaseSummary {
   id: number; status: LeaseStatus; startDate: string; endDate?: string; monthlyRent: number; dueDay: number

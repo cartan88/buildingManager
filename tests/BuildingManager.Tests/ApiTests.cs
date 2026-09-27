@@ -187,5 +187,31 @@ public class ApiTests : DatabaseTest
         Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/reports/pnl?from=2026-12-31&to=2026-01-01")).StatusCode);
     }
 
+    [Fact]
+    public async Task Tenant_can_be_marked_inactive_only_without_an_active_lease()
+    {
+        var client = TrustedClient();
+        var property = await (await client.PostAsJsonAsync("/api/properties", new { name = "Test Apartments" })).Content.ReadFromJsonAsync<IdResponse>();
+        var unit = await (await client.PostAsJsonAsync($"/api/properties/{property!.Id}/units", new { name = "Unit 1A", defaultMonthlyRent = 12000 }))
+            .Content.ReadFromJsonAsync<IdResponse>();
+        var tenant = await (await client.PostAsJsonAsync("/api/tenants", new { fullName = "Juan Dela Cruz" })).Content.ReadFromJsonAsync<IdResponse>();
+        var start = DateOnly.FromDateTime(DateTime.Today);
+        var leaseInput = new { unitId = unit!.Id, tenantId = tenant!.Id, startDate = start, monthlyRent = 12000, dueDay = start.Day, gracePeriodDays = 0, securityDeposit = 0 };
+        var lease = await (await client.PostAsJsonAsync("/api/leases", leaseInput)).Content.ReadFromJsonAsync<IdResponse>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync($"/api/tenants/{tenant.Id}/deactivate", null)).StatusCode);
+
+        await client.PostAsJsonAsync($"/api/leases/{lease!.Id}/end", new { endDate = start });
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync($"/api/tenants/{tenant.Id}/deactivate", null)).StatusCode);
+
+        // Inactive tenants can't be given a new lease until reactivated, and history still blocks deletion.
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/leases", leaseInput)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.DeleteAsync($"/api/tenants/{tenant.Id}")).StatusCode);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync($"/api/tenants/{tenant.Id}/activate", null)).StatusCode);
+        await using var db = NewContext();
+        Assert.True(await db.Tenants.Where(t => t.Id == tenant.Id).Select(t => t.IsActive).SingleAsync());
+    }
+
     private record IdResponse(int Id);
 }
