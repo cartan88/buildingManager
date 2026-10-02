@@ -62,7 +62,42 @@ export default function SettingsPage() {
       </form>
 
       <CategoriesPanel />
+      <PasswordPanel />
     </>
+  )
+}
+
+function PasswordPanel() {
+  const blank = { currentPassword: '', newPassword: '', confirm: '' }
+  const [f, setF] = useState(blank)
+  const [saved, setSaved] = useState(false)
+  const { error, setError, saving, run } = useSubmit()
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => { setSaved(false); setF(s => ({ ...s, [k]: e.target.value })) }
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (f.newPassword !== f.confirm) { setError("The two new passwords don't match."); return }
+    if (await run(() => api.post('/auth/password', { currentPassword: f.currentPassword, newPassword: f.newPassword }))) {
+      setF(blank)
+      setSaved(true)
+    }
+  }
+
+  return (
+    <Panel title="Change password">
+      <form onSubmit={submit}>
+        <div className="form-grid">
+          <Field label="Current password"><input type="password" value={f.currentPassword} onChange={set('currentPassword')} autoComplete="current-password" required /></Field>
+          <Field label="New password" hint="At least 8 characters"><input type="password" value={f.newPassword} onChange={set('newPassword')} autoComplete="new-password" minLength={8} required /></Field>
+          <Field label="Confirm new password"><input type="password" value={f.confirm} onChange={set('confirm')} autoComplete="new-password" required /></Field>
+        </div>
+        <div className="form-buttons">
+          <button type="submit" disabled={saving}>Change password</button>
+          {saved && <span className="badge badge-ok">Password changed</span>}
+        </div>
+      </form>
+      <ErrorBanner message={error} />
+    </Panel>
   )
 }
 

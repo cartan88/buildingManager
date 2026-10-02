@@ -32,7 +32,23 @@ public class ApiTests : DatabaseTest
         await base.DisposeAsync();
     }
 
-    private HttpClient TrustedClient()
+    private const string TestUser = "owner", TestPassword = "correct horse battery";
+
+    /// <summary>A client like the app's own pages: sends the cross-site header (unless told not to) and is signed in.</summary>
+    private async Task<HttpClient> TrustedClient(bool withHeader = true)
+    {
+        var client = AppClient();
+        var credentials = new { username = TestUser, password = TestPassword };
+        var res = await client.PostAsJsonAsync("/api/auth/setup", credentials);
+        if (res.StatusCode != HttpStatusCode.NoContent) // account already made by an earlier client in this test
+            res = await client.PostAsJsonAsync("/api/auth/login", credentials);
+        Assert.Equal(HttpStatusCode.NoContent, res.StatusCode);
+        if (!withHeader) client.DefaultRequestHeaders.Remove(CrossSiteGuard.HeaderName);
+        return client;
+    }
+
+    /// <summary>Sends the cross-site header but isn't signed in.</summary>
+    private HttpClient AppClient()
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add(CrossSiteGuard.HeaderName, CrossSiteGuard.HeaderValue);
@@ -54,7 +70,7 @@ public class ApiTests : DatabaseTest
     [Fact]
     public async Task Requests_from_the_app_itself_get_through()
     {
-        var res = await TrustedClient().PostAsync("/api/payments/999/void", content: null);
+        var res = await (await TrustedClient()).PostAsync("/api/payments/999/void", content: null);
 
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode); // reached the endpoint
     }
@@ -62,7 +78,7 @@ public class ApiTests : DatabaseTest
     [Fact]
     public async Task Reads_do_not_need_the_header()
     {
-        var res = await _factory.CreateClient().GetAsync("/api/dashboard");
+        var res = await (await TrustedClient(withHeader: false)).GetAsync("/api/dashboard");
 
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
     }
@@ -70,7 +86,7 @@ public class ApiTests : DatabaseTest
     [Fact]
     public async Task Renaming_a_unit_to_an_existing_name_is_a_validation_error()
     {
-        var client = TrustedClient();
+        var client = (await TrustedClient());
         var property = await (await client.PostAsJsonAsync("/api/properties", new { name = "Test Apartments" })).Content.ReadFromJsonAsync<IdResponse>();
         await client.PostAsJsonAsync($"/api/properties/{property!.Id}/units", new { name = "Unit 1A", defaultMonthlyRent = 12000 });
         var b = await (await client.PostAsJsonAsync($"/api/properties/{property.Id}/units", new { name = "Unit 1B", defaultMonthlyRent = 15000 }))
@@ -85,7 +101,7 @@ public class ApiTests : DatabaseTest
     [Fact]
     public async Task Ending_a_lease_through_the_api_voids_rent_after_the_end_date()
     {
-        var client = TrustedClient();
+        var client = (await TrustedClient());
         var property = await (await client.PostAsJsonAsync("/api/properties", new { name = "Test Apartments" })).Content.ReadFromJsonAsync<IdResponse>();
         var unit = await (await client.PostAsJsonAsync($"/api/properties/{property!.Id}/units", new { name = "Unit 1A", defaultMonthlyRent = 12000 }))
             .Content.ReadFromJsonAsync<IdResponse>();
@@ -108,7 +124,7 @@ public class ApiTests : DatabaseTest
     [Fact]
     public async Task Statement_pdf_opens_inline_and_register_exports_to_excel()
     {
-        var client = TrustedClient();
+        var client = (await TrustedClient());
         Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/settings/business", new
         {
             name = "Sample Owner", documentTitle = "Billing Statement", numberPrefix = "BS", defaultDueDays = 7,
@@ -143,7 +159,7 @@ public class ApiTests : DatabaseTest
     [Fact]
     public async Task Receipt_upload_and_download_round_trip_with_safe_headers()
     {
-        var client = TrustedClient();
+        var client = (await TrustedClient());
         var created = await client.PostAsJsonAsync("/api/expenses", new
         {
             date = "2026-09-10", propertyId = (int?)null, categoryId = 1, vendorName = "Ace Hardware", description = "Faucet",
@@ -162,7 +178,7 @@ public class ApiTests : DatabaseTest
         Assert.Equal(HttpStatusCode.OK, uploaded.StatusCode);
         var receipt = await uploaded.Content.ReadFromJsonAsync<IdResponse>();
 
-        var download = await _factory.CreateClient().GetAsync($"/api/receipts/{receipt!.Id}");
+        var download = await (await TrustedClient(withHeader: false)).GetAsync($"/api/receipts/{receipt!.Id}"); // a plain link click
         Assert.Equal(bytes, await download.Content.ReadAsByteArrayAsync());
         Assert.Equal("application/pdf", download.Content.Headers.ContentType?.MediaType);
         Assert.Equal("nosniff", download.Headers.GetValues("X-Content-Type-Options").Single());
@@ -176,7 +192,7 @@ public class ApiTests : DatabaseTest
     [Fact]
     public async Task Profit_and_loss_report_and_excel_export()
     {
-        var client = TrustedClient();
+        var client = (await TrustedClient());
         var json = await client.GetAsync("/api/reports/pnl?from=2026-01-01&to=2026-12-31&basis=Accrual&by=Month");
         Assert.Equal(HttpStatusCode.OK, json.StatusCode);
         Assert.Contains("\"Dec 2026\"", await json.Content.ReadAsStringAsync());
@@ -191,7 +207,7 @@ public class ApiTests : DatabaseTest
     [Fact]
     public async Task Tenant_can_be_marked_inactive_only_without_an_active_lease()
     {
-        var client = TrustedClient();
+        var client = (await TrustedClient());
         var property = await (await client.PostAsJsonAsync("/api/properties", new { name = "Test Apartments" })).Content.ReadFromJsonAsync<IdResponse>();
         var unit = await (await client.PostAsJsonAsync($"/api/properties/{property!.Id}/units", new { name = "Unit 1A", defaultMonthlyRent = 12000 }))
             .Content.ReadFromJsonAsync<IdResponse>();
@@ -217,7 +233,7 @@ public class ApiTests : DatabaseTest
     [Fact]
     public async Task Logo_upload_replace_and_remove_round_trip()
     {
-        var client = TrustedClient();
+        var client = (await TrustedClient());
         var png = TinyPng;
 
         Assert.Null((await client.GetFromJsonAsync<BrandingResponse>("/api/settings/branding"))!.LogoVersion);
@@ -248,7 +264,7 @@ public class ApiTests : DatabaseTest
     [Fact]
     public async Task Statements_keep_the_logo_they_were_issued_with()
     {
-        var client = TrustedClient();
+        var client = (await TrustedClient());
         await client.PutAsJsonAsync("/api/settings/business", new { name = "Sample Owner", documentTitle = "Billing Statement", numberPrefix = "BS", defaultDueDays = 7 });
         var property = await (await client.PostAsJsonAsync("/api/properties", new { name = "Test Apartments" })).Content.ReadFromJsonAsync<IdResponse>();
         var today = DateOnly.FromDateTime(DateTime.Today);
@@ -293,7 +309,7 @@ public class ApiTests : DatabaseTest
     [Fact]
     public async Task Daily_lease_is_billed_every_day_at_the_daily_rate()
     {
-        var client = TrustedClient();
+        var client = (await TrustedClient());
         var property = await (await client.PostAsJsonAsync("/api/properties", new { name = "Bedspace House" })).Content.ReadFromJsonAsync<IdResponse>();
         var unit = await (await client.PostAsJsonAsync($"/api/properties/{property!.Id}/units", new { name = "Bed 1", defaultMonthlyRent = 6000 }))
             .Content.ReadFromJsonAsync<IdResponse>();
@@ -330,7 +346,7 @@ public class ApiTests : DatabaseTest
     [Fact]
     public async Task Tenant_type_of_business_is_saved_trimmed_and_suggested()
     {
-        var client = TrustedClient();
+        var client = (await TrustedClient());
         var created = await (await client.PostAsJsonAsync("/api/tenants", new { fullName = "Aling Nena", businessType = "  Sari-sari store " }))
             .Content.ReadFromJsonAsync<IdResponse>();
         await client.PostAsJsonAsync("/api/tenants", new { fullName = "Mang Tomas", businessType = "Sari-sari store" });
@@ -346,6 +362,91 @@ public class ApiTests : DatabaseTest
     }
 
     private record TenantRow(int Id, string FullName, string? BusinessType);
+
+    [Fact]
+    public async Task Data_needs_sign_in_but_the_sign_in_page_does_not()
+    {
+        var anonymous = AppClient();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/dashboard")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync("/api/tenants", new { fullName = "Sneaky" })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await anonymous.GetAsync("/api/settings/branding")).StatusCode); // shown on the sign-in page
+
+        var status = await anonymous.GetFromJsonAsync<AuthStatusResponse>("/api/auth/status");
+        Assert.True(status!.SetupRequired);
+        Assert.False(status.SignedIn);
+    }
+
+    [Fact]
+    public async Task The_account_can_only_be_created_once()
+    {
+        await TrustedClient(); // creates it
+
+        var second = await AppClient().PostAsJsonAsync("/api/auth/setup", new { username = "intruder", password = "another password" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, second.StatusCode);
+        await using var db = NewContext();
+        Assert.Equal([TestUser], await db.Users.Select(u => u.Username).ToListAsync());
+    }
+
+    [Fact]
+    public async Task Setup_rejects_short_passwords_and_stores_only_a_hash()
+    {
+        var weak = await AppClient().PostAsJsonAsync("/api/auth/setup", new { username = "owner", password = "short" });
+        Assert.Equal(HttpStatusCode.BadRequest, weak.StatusCode);
+
+        await TrustedClient();
+        await using var db = NewContext();
+        var hash = await db.Users.Select(u => u.PasswordHash).SingleAsync();
+        Assert.DoesNotContain(TestPassword, hash);
+    }
+
+    [Fact]
+    public async Task Repeated_wrong_passwords_lock_sign_in_for_a_while()
+    {
+        await TrustedClient();
+        var client = AppClient();
+        async Task<HttpStatusCode> Login(string password) =>
+            (await client.PostAsJsonAsync("/api/auth/login", new { username = TestUser, password })).StatusCode;
+
+        for (var i = 1; i < 5; i++) Assert.Equal(HttpStatusCode.Unauthorized, await Login("wrong password"));
+        Assert.Equal(HttpStatusCode.TooManyRequests, await Login("wrong password")); // 5th in a row
+        Assert.Equal(HttpStatusCode.TooManyRequests, await Login(TestPassword)); // even the right one, until the wait is over
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/dashboard")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Changing_the_password_signs_out_other_sessions()
+    {
+        var here = await TrustedClient();
+        var elsewhere = await TrustedClient();
+
+        var wrongCurrent = await here.PostAsJsonAsync("/api/auth/password", new { currentPassword = "nope", newPassword = "a brand new password" });
+        Assert.Equal(HttpStatusCode.BadRequest, wrongCurrent.StatusCode);
+
+        var changed = await here.PostAsJsonAsync("/api/auth/password", new { currentPassword = TestPassword, newPassword = "a brand new password" });
+        Assert.Equal(HttpStatusCode.NoContent, changed.StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, (await here.GetAsync("/api/dashboard")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await elsewhere.GetAsync("/api/dashboard")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await AppClient().PostAsJsonAsync("/api/auth/login", new { username = TestUser, password = TestPassword })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Sign_out_and_reset_login_end_the_session()
+    {
+        var client = await TrustedClient();
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync("/api/auth/logout", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/dashboard")).StatusCode);
+
+        // "Forgot the password": the reset removes the account, so even a live session stops working.
+        var other = await TrustedClient();
+        await using (var db = NewContext()) await BuildingManager.Api.Auth.AuthEndpoints.ResetLoginAsync(db);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await other.GetAsync("/api/dashboard")).StatusCode);
+        Assert.True((await AppClient().GetFromJsonAsync<AuthStatusResponse>("/api/auth/status"))!.SetupRequired);
+    }
+
+    private record AuthStatusResponse(bool SetupRequired, bool SignedIn, string? Username);
 
     /// <summary>A valid 1×1 PNG.</summary>
     private static readonly byte[] TinyPng = Convert.FromBase64String(

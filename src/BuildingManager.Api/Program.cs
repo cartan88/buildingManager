@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using BuildingManager.Api;
+using BuildingManager.Api.Auth;
 using BuildingManager.Api.Endpoints;
 using BuildingManager.Infrastructure.Billing;
 using BuildingManager.Infrastructure.Data;
@@ -23,20 +24,38 @@ builder.Services.AddScoped<ExpenseService>();
 builder.Services.AddScoped<ProfitAndLossService>();
 builder.Services.AddHostedService<RentChargeWorker>();
 builder.Services.AddProblemDetails();
+builder.Services.AddAppAuthentication();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 var app = builder.Build();
 
 // Single-PC app: keep the schema current automatically on startup.
 using (var scope = app.Services.CreateScope())
-    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+
+    // Forgot the password: `dotnet run --project src/BuildingManager.Api -- --reset-login`
+    if (args.Contains("--reset-login"))
+    {
+        var removed = await AuthEndpoints.ResetLoginAsync(db);
+        Console.WriteLine(removed > 0
+            ? "Login removed. Start the app normally and open it to set a new username and password. No other data was changed."
+            : "There was no login to remove.");
+        return;
+    }
+}
 
 app.UseExceptionHandler();
 app.UseCrossSiteGuard();
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(); // the React app itself has no data in it; it shows the sign-in page until signed in
+app.UseAuthentication();
+app.UseAuthorization();
 
-var api = app.MapGroup("/api");
+// Everything under /api needs a signed-in user unless an endpoint says otherwise (AllowAnonymous).
+var api = app.MapGroup("/api").RequireAuthorization();
+api.MapAuthEndpoints();
 api.MapSetupEndpoints();
 api.MapLeaseEndpoints();
 api.MapReportEndpoints();

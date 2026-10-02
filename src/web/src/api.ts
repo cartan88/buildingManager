@@ -92,6 +92,7 @@ export async function uploadFile<T>(url: string, file: File): Promise<T> {
   const body = new FormData()
   body.append('file', file)
   const res = await fetch(`/api${url}`, { method: 'POST', body, headers: { 'X-Requested-With': 'BuildingManager' } })
+  checkSignedIn(res, url)
   if (!res.ok) {
     const problem = await res.json().catch(() => null)
     throw new ApiError((problem?.errors ? Object.values(problem.errors).flat().join(' ') : problem?.title) || `Upload failed (${res.status})`)
@@ -104,6 +105,15 @@ export const monthEnd = (iso: string) => addDays(monthStart(addDays(monthStart(i
 
 export class ApiError extends Error {}
 
+/** Fired when the API says the session has ended (signed out elsewhere, password changed, timed out). */
+export const SIGNED_OUT = 'signed-out'
+const checkSignedIn = (res: Response, url: string) => {
+  // /auth calls handle their own 401 (e.g. a wrong password on the sign-in form).
+  if (res.status === 401 && !url.startsWith('/auth/')) window.dispatchEvent(new Event(SIGNED_OUT))
+}
+
+export interface AuthStatus { setupRequired: boolean; signedIn: boolean; username?: string }
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${url}`, {
     method,
@@ -114,6 +124,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
+  checkSignedIn(res, url)
   if (!res.ok) {
     const problem = await res.json().catch(() => null)
     const messages = problem?.errors ? Object.values(problem.errors).flat().join(' ') : problem?.title

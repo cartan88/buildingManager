@@ -17,6 +17,14 @@ dotnet run --project src/BuildingManager.Api --launch-profile http
 
 Then open http://localhost:5073.
 
+**Signing in:** the first time you open the app it asks you to create a username and password. After that you need them every time (sessions last 12 hours from your last use). **Sign out** is at the bottom of the menu, and **Settings → Change password** changes it, which also signs out any other open session. After 5 wrong passwords in a row, sign-in is paused for a minute.
+
+**Forgot the password:** stop the app, then run this from the project folder. It removes only the login (no other data) so the next visit asks you to create a new one:
+
+```bash
+dotnet run --project src/BuildingManager.Api --launch-profile http -- --reset-login
+```
+
 **Development** (hot reload): run the API as above, and in a second terminal run `npm run dev` in `src/web`, then open http://localhost:5173 (`/api` is proxied to the API).
 
 **Tests:**

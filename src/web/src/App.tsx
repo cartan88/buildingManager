@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
-import { BRANDING_CHANGED, logoUrl, type Branding } from './api'
-import { useApi } from './ui'
+import { api, BRANDING_CHANGED, logoUrl, SIGNED_OUT, type AuthStatus, type Branding } from './api'
+import { ErrorBanner, useApi } from './ui'
+import SignInPage from './pages/SignInPage'
 import DashboardPage from './pages/DashboardPage'
 import PropertiesPage from './pages/PropertiesPage'
 import TenantsPage from './pages/TenantsPage'
@@ -51,6 +52,19 @@ function Brand({ data }: { data?: Branding }) {
 
 export default function App() {
   const branding = useBranding()
+  const auth = useApi<AuthStatus>('/auth/status')
+  const reloadAuth = auth.reload
+  useEffect(() => {
+    const onSignedOut = () => void reloadAuth()
+    window.addEventListener(SIGNED_OUT, onSignedOut)
+    return () => window.removeEventListener(SIGNED_OUT, onSignedOut)
+  }, [reloadAuth])
+
+  if (!auth.data) return <ErrorBanner message={auth.error} />
+  if (!auth.data.signedIn) return <SignInPage setup={auth.data.setupRequired} branding={branding} onSignedIn={reloadAuth} />
+
+  const signOut = async () => { await api.post('/auth/logout'); void reloadAuth() }
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -60,6 +74,10 @@ export default function App() {
             <NavLink key={n.to} to={n.to} end={n.end}>{n.label}</NavLink>
           ))}
         </nav>
+        <div className="signed-in">
+          <span>{auth.data.username}</span>
+          <button type="button" className="link" onClick={signOut}>Sign out</button>
+        </div>
         <p className="copyright">© {new Date().getFullYear()} {branding?.name ?? 'Building Manager'}</p>
       </aside>
       <main className="content">

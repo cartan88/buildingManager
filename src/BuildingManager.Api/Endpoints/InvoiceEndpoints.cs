@@ -37,14 +37,15 @@ public static class InvoiceEndpoints
             return Results.NoContent();
         });
 
-        g.MapGet("/settings/branding", async (InvoiceService invoices) => await invoices.GetBrandingAsync());
+        // Name and logo are shown on the sign-in page, so these two are readable without signing in.
+        g.MapGet("/settings/branding", async (InvoiceService invoices) => await invoices.GetBrandingAsync()).AllowAnonymous();
 
         g.MapGet("/settings/logo", async (InvoiceService invoices, HttpContext http) =>
         {
             if (await invoices.GetLogoAsync() is not { } logo) return Results.NotFound();
             http.Response.Headers.XContentTypeOptions = "nosniff";
             return Results.File(logo.Content, logo.ContentType);
-        });
+        }).AllowAnonymous();
 
         // Cross-site uploads are already blocked by CrossSiteGuard's custom-header check.
         g.MapPost("/settings/logo", async (IFormFile file, InvoiceService invoices) =>

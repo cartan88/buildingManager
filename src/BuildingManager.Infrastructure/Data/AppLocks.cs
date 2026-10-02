@@ -6,6 +6,8 @@ public static class AppLocks
 {
     public static string Lease(int leaseId) => $"BuildingManager.Lease.{leaseId}";
     public const string InvoiceNumbers = "BuildingManager.InvoiceNumbers";
+    /// <summary>Held while creating the first account, so two set-up screens can't both create one.</summary>
+    public const string AccountSetup = "BuildingManager.AccountSetup";
 
     /// <summary>
     /// Runs <paramref name="action"/> in a transaction holding an exclusive SQL Server app lock on

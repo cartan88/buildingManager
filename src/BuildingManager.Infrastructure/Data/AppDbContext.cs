@@ -12,6 +12,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Charge> Charges => Set<Charge>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<PaymentAllocation> PaymentAllocations => Set<PaymentAllocation>();
+    public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<BusinessProfile> BusinessProfiles => Set<BusinessProfile>();
     public DbSet<BusinessLogo> BusinessLogos => Set<BusinessLogo>();
     public DbSet<StatementLogo> StatementLogos => Set<StatementLogo>();
@@ -68,6 +69,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         });
 
         b.Entity<Payment>(e => e.Property(x => x.Reference).HasMaxLength(100));
+
+        b.Entity<AppUser>(e =>
+        {
+            e.Property(x => x.Username).HasMaxLength(100);
+            e.HasIndex(x => x.Username).IsUnique();
+            e.Property(x => x.PasswordHash).HasMaxLength(500);
+        });
 
         b.Entity<BusinessLogo>(e =>
         {
