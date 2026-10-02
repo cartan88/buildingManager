@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.RegularExpressions;
 using BuildingManager.Api;
+using BuildingManager.Api.Email;
 using BuildingManager.Core.Entities;
 using BuildingManager.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -23,6 +25,9 @@ public class ApiTests : DatabaseTest
             services.AddDbContext<AppDbContext>(o => o.UseSqlServer(ConnectionString));
             var worker = services.Single(s => s.ImplementationType == typeof(RentChargeWorker));
             services.Remove(worker);
+            // Record emails instead of sending them.
+            services.AddSingleton<FakeEmailSender>();
+            services.AddScoped<IEmailSender>(sp => sp.GetRequiredService<FakeEmailSender>());
         }));
     }
 
@@ -446,7 +451,120 @@ public class ApiTests : DatabaseTest
         Assert.True((await AppClient().GetFromJsonAsync<AuthStatusResponse>("/api/auth/status"))!.SetupRequired);
     }
 
-    private record AuthStatusResponse(bool SetupRequired, bool SignedIn, string? Username);
+    private FakeEmailSender Emails => _factory.Services.GetRequiredService<FakeEmailSender>();
+
+    /// <summary>Asks for a reset code and returns the code from the email.</summary>
+    private async Task<string> RequestResetCode(HttpClient client)
+    {
+        var res = await client.PostAsJsonAsync("/api/auth/forgot", new { username = TestUser });
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        return Regex.Match(Emails.Sent.Last().Text, @"[A-Z2-9]{4}-[A-Z2-9]{4}").Value;
+    }
+
+    private async Task SetRecoveryEmail()
+    {
+        await using var db = NewContext();
+        await db.Users.ExecuteUpdateAsync(u => u.SetProperty(x => x.Email, "owner@example.com"));
+    }
+
+    [Fact]
+    public async Task Forgot_password_emails_a_code_that_resets_the_password_once()
+    {
+        var oldSession = await TrustedClient();
+        await SetRecoveryEmail();
+        var client = AppClient();
+        Assert.True((await client.GetFromJsonAsync<AuthStatusResponse>("/api/auth/status"))!.EmailReset);
+
+        var code = await RequestResetCode(client);
+        var email = Emails.Sent.Single();
+        Assert.Equal("owner@example.com", email.To);
+        Assert.Contains($"/reset-password?user={TestUser}&code={code}", email.Text); // a link with the code filled in
+        await using (var db = NewContext())
+            Assert.DoesNotContain(code, await db.PasswordResetCodes.Select(c => c.CodeHash).SingleAsync()); // only a hash is kept
+
+        // Typed loosely from a phone: lower case, a space instead of the dash.
+        var reset = await client.PostAsJsonAsync("/api/auth/reset", new { username = TestUser, code = code.ToLowerInvariant().Replace('-', ' '), newPassword = "my new password" });
+        Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/dashboard")).StatusCode); // signed straight in
+        Assert.Equal(HttpStatusCode.Unauthorized, (await oldSession.GetAsync("/api/dashboard")).StatusCode);
+
+        var again = await AppClient().PostAsJsonAsync("/api/auth/reset", new { username = TestUser, code, newPassword = "another password" });
+        Assert.Equal(HttpStatusCode.BadRequest, again.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await AppClient().PostAsJsonAsync("/api/auth/login", new { username = TestUser, password = "my new password" })).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_reset_code_stops_working_after_5_wrong_tries_or_when_expired()
+    {
+        await TrustedClient();
+        await SetRecoveryEmail();
+        var client = AppClient();
+        var code = await RequestResetCode(client);
+
+        for (var i = 0; i < 5; i++)
+            Assert.Equal(HttpStatusCode.BadRequest,
+                (await client.PostAsJsonAsync("/api/auth/reset", new { username = TestUser, code = "AAAA-AAAA", newPassword = "my new password" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.PostAsJsonAsync("/api/auth/reset", new { username = TestUser, code, newPassword = "my new password" })).StatusCode);
+
+        // A fresh code (after the one-a-minute limit) that has since expired doesn't work either.
+        await using (var db = NewContext())
+            await db.PasswordResetCodes.ExecuteUpdateAsync(c => c.SetProperty(x => x.CreatedAt, DateTime.UtcNow.AddHours(-1)));
+        var expired = await RequestResetCode(client);
+        await using (var db = NewContext())
+            await db.PasswordResetCodes.ExecuteUpdateAsync(c => c.SetProperty(x => x.ExpiresAt, DateTime.UtcNow.AddMinutes(-1)));
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.PostAsJsonAsync("/api/auth/reset", new { username = TestUser, code = expired, newPassword = "my new password" })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Forgot_password_does_not_reveal_unknown_usernames_and_needs_email_set_up()
+    {
+        await TrustedClient();
+        await SetRecoveryEmail();
+
+        var unknown = await AppClient().PostAsJsonAsync("/api/auth/forgot", new { username = "nobody" });
+        Assert.Equal(HttpStatusCode.OK, unknown.StatusCode); // same answer as a real username
+        Assert.Empty(Emails.Sent);
+
+        Emails.Configured = false;
+        Assert.False((await AppClient().GetFromJsonAsync<AuthStatusResponse>("/api/auth/status"))!.EmailReset);
+        Assert.Equal(HttpStatusCode.BadRequest, (await AppClient().PostAsJsonAsync("/api/auth/forgot", new { username = TestUser })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Email_settings_keep_the_password_encrypted_and_never_send_it_back()
+    {
+        var client = await TrustedClient();
+        var save = await client.PutAsJsonAsync("/api/settings/email", new
+        {
+            host = "smtp.gmail.com", port = 587, security = "StartTls", username = "sender@gmail.com", password = "app-password-123",
+            fromAddress = "sender@gmail.com", fromName = "AZT Trading", accountEmail = "owner@example.com",
+        });
+        Assert.Equal(HttpStatusCode.NoContent, save.StatusCode);
+
+        var json = await client.GetStringAsync("/api/settings/email");
+        Assert.DoesNotContain("app-password-123", json);
+        Assert.Contains("\"hasPassword\":true", json);
+        Assert.Contains("owner@example.com", json);
+        await using var db = NewContext();
+        var stored = await db.EmailSettings.Select(e => e.ProtectedPassword).SingleAsync();
+        Assert.NotNull(stored);
+        Assert.DoesNotContain("app-password-123", stored);
+        Assert.Equal("owner@example.com", await db.Users.Select(u => u.Email).SingleAsync());
+    }
+
+    [Fact]
+    public async Task An_email_username_is_used_as_the_recovery_address()
+    {
+        var res = await AppClient().PostAsJsonAsync("/api/auth/setup", new { username = "owner@example.com", password = TestPassword });
+        Assert.Equal(HttpStatusCode.NoContent, res.StatusCode);
+        await using var db = NewContext();
+        Assert.Equal("owner@example.com", await db.Users.Select(u => u.Email).SingleAsync());
+    }
+
+    private record AuthStatusResponse(bool SetupRequired, bool SignedIn, string? Username, bool EmailReset = false);
 
     /// <summary>A valid 1×1 PNG.</summary>
     private static readonly byte[] TinyPng = Convert.FromBase64String(

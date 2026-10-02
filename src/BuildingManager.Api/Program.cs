@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using BuildingManager.Api;
 using BuildingManager.Api.Auth;
+using BuildingManager.Api.Email;
 using BuildingManager.Api.Endpoints;
 using BuildingManager.Infrastructure.Billing;
 using BuildingManager.Infrastructure.Data;
@@ -25,6 +26,7 @@ builder.Services.AddScoped<ProfitAndLossService>();
 builder.Services.AddHostedService<RentChargeWorker>();
 builder.Services.AddProblemDetails();
 builder.Services.AddAppAuthentication();
+builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 var app = builder.Build();
@@ -56,6 +58,7 @@ app.UseAuthorization();
 // Everything under /api needs a signed-in user unless an endpoint says otherwise (AllowAnonymous).
 var api = app.MapGroup("/api").RequireAuthorization();
 api.MapAuthEndpoints();
+api.MapEmailSettingsEndpoints();
 api.MapSetupEndpoints();
 api.MapLeaseEndpoints();
 api.MapReportEndpoints();

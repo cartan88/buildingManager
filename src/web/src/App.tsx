@@ -61,7 +61,7 @@ export default function App() {
   }, [reloadAuth])
 
   if (!auth.data) return <ErrorBanner message={auth.error} />
-  if (!auth.data.signedIn) return <SignInPage setup={auth.data.setupRequired} branding={branding} onSignedIn={reloadAuth} />
+  if (!auth.data.signedIn) return <SignInPage setup={auth.data.setupRequired} emailReset={auth.data.emailReset} branding={branding} onSignedIn={reloadAuth} />
 
   const signOut = async () => { await api.post('/auth/logout'); void reloadAuth() }
 
@@ -75,7 +75,7 @@ export default function App() {
           ))}
         </nav>
         <div className="signed-in">
-          <span>{auth.data.username}</span>
+          <span className="signed-in-name" title={auth.data.username}>{auth.data.username}</span>
           <button type="button" className="link" onClick={signOut}>Sign out</button>
         </div>
         <p className="copyright">© {new Date().getFullYear()} {branding?.name ?? 'Building Manager'}</p>

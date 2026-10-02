@@ -19,7 +19,9 @@ Then open http://localhost:5073.
 
 **Signing in:** the first time you open the app it asks you to create a username and password. After that you need them every time (sessions last 12 hours from your last use). **Sign out** is at the bottom of the menu, and **Settings → Change password** changes it, which also signs out any other open session. After 5 wrong passwords in a row, sign-in is paused for a minute.
 
-**Forgot the password:** stop the app, then run this from the project folder. It removes only the login (no other data) so the next visit asks you to create a new one:
+**Forgot password? (by email):** once **Settings → Password reset email** is filled in, the sign-in page offers *Forgot password?*. It emails a one-time code (and a link with it filled in) to your address. Type the code on the sign-in page (handy if you read the email on your phone), or open the link on this PC. A code works once, for 30 minutes, and stops working after 5 wrong tries. For Gmail, turn on 2-step verification and use an **app password**; the saved password is encrypted on this PC. Use **Save and send test email** to check it works.
+
+**Forgot the password, without email:** stop the app, then run this from the project folder. It removes only the login (no other data) so the next visit asks you to create a new one:
 
 ```bash
 dotnet run --project src/BuildingManager.Api --launch-profile http -- --reset-login

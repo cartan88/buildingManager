@@ -13,6 +13,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<PaymentAllocation> PaymentAllocations => Set<PaymentAllocation>();
     public DbSet<AppUser> Users => Set<AppUser>();
+    public DbSet<PasswordResetCode> PasswordResetCodes => Set<PasswordResetCode>();
+    public DbSet<EmailSettings> EmailSettings => Set<EmailSettings>();
     public DbSet<BusinessProfile> BusinessProfiles => Set<BusinessProfile>();
     public DbSet<BusinessLogo> BusinessLogos => Set<BusinessLogo>();
     public DbSet<StatementLogo> StatementLogos => Set<StatementLogo>();
@@ -29,6 +31,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         // Enums stored as text so the tables stay readable when querying in SSMS.
         builder.Properties<LeaseStatus>().HaveConversion<string>().HaveMaxLength(20);
         builder.Properties<RentFrequency>().HaveConversion<string>().HaveMaxLength(20);
+        builder.Properties<EmailSecurity>().HaveConversion<string>().HaveMaxLength(20);
         builder.Properties<ChargeType>().HaveConversion<string>().HaveMaxLength(20);
         builder.Properties<PaymentMethod>().HaveConversion<string>().HaveMaxLength(20);
         builder.Properties<InvoiceStatus>().HaveConversion<string>().HaveMaxLength(20);
@@ -75,6 +78,23 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Username).HasMaxLength(100);
             e.HasIndex(x => x.Username).IsUnique();
             e.Property(x => x.PasswordHash).HasMaxLength(500);
+            e.Property(x => x.Email).HasMaxLength(200);
+        });
+
+        b.Entity<PasswordResetCode>(e =>
+        {
+            e.Property(x => x.CodeHash).HasMaxLength(64);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<EmailSettings>(e =>
+        {
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Host).HasMaxLength(200);
+            e.Property(x => x.Username).HasMaxLength(200);
+            e.Property(x => x.ProtectedPassword).HasMaxLength(2000);
+            e.Property(x => x.FromAddress).HasMaxLength(200);
+            e.Property(x => x.FromName).HasMaxLength(200);
         });
 
         b.Entity<BusinessLogo>(e =>

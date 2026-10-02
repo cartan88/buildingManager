@@ -52,6 +52,12 @@ export interface BusinessProfile {
   documentTitle: string; numberPrefix: string; footerNote?: string; defaultDueDays: number
 }
 
+export type EmailSecurity = 'StartTls' | 'SslOnConnect'
+export interface EmailSettings {
+  host: string; port: number; security: EmailSecurity; username?: string; hasPassword: boolean
+  fromAddress: string; fromName?: string; accountEmail?: string
+}
+
 /** Business name and logo shown in the sidebar. logoVersion is null when no logo is uploaded. */
 export interface Branding { name?: string; logoVersion?: number }
 export const logoUrl = (b: Branding) => b.logoVersion ? `/api/settings/logo?v=${b.logoVersion}` : undefined
@@ -112,7 +118,7 @@ const checkSignedIn = (res: Response, url: string) => {
   if (res.status === 401 && !url.startsWith('/auth/')) window.dispatchEvent(new Event(SIGNED_OUT))
 }
 
-export interface AuthStatus { setupRequired: boolean; signedIn: boolean; username?: string }
+export interface AuthStatus { setupRequired: boolean; signedIn: boolean; username?: string; emailReset: boolean }
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${url}`, {

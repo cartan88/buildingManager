@@ -38,14 +38,18 @@ h2 { font-size: 16px; margin: 0 0 12px; font-weight: 600; }
 .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
 .sidebar nav a { color: var(--sidebar-text); padding: 8px 10px; border-radius: 6px; }
 .sidebar nav a:hover { background: #243044; text-decoration: none; }
-.signed-in { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; padding: 12px 10px 0; border-top: 1px solid #243044; font-size: 12px; overflow-wrap: anywhere; }
-.signed-in button.link { color: var(--sidebar-text); padding: 2px 0; }
+.signed-in { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 16px; padding: 12px 10px 0; border-top: 1px solid #243044; font-size: 12px; }
+.signed-in-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.signed-in button.link { color: var(--sidebar-text); padding: 0; }
 .signin { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .signin-card { width: 100%; max-width: 360px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 28px; display: flex; flex-direction: column; gap: 4px; }
 .signin-card h1 { margin-bottom: 2px; }
 .signin-card > button { margin-top: 8px; }
 .signin-logo { max-width: 160px; max-height: 64px; object-fit: contain; align-self: flex-start; margin-bottom: 12px; }
 p.small { font-size: 12px; }
+.inline-fields { display: flex; gap: 8px; }
+.inline-fields input { width: 90px; flex: none; }
+.signin-switch { align-self: flex-start; padding: 2px 0; }
 .copyright { color: var(--sidebar-text); opacity: .6; font-size: 11px; padding: 16px 10px 0; margin: 0; overflow-wrap: anywhere; }
 .sidebar nav a.active { background: var(--accent); color: #fff; }
 .content { flex: 1; padding: 24px 32px; max-width: 1200px; min-width: 0; }

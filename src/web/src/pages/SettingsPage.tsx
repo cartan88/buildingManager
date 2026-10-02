@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, logoUrl, notifyBrandingChanged, uploadFile, type Branding, type BusinessProfile, type ExpenseCategory, type ExpenseCategoryKind } from '../api'
+import { api, logoUrl, notifyBrandingChanged, uploadFile, type Branding, type BusinessProfile, type EmailSecurity, type EmailSettings, type ExpenseCategory, type ExpenseCategoryKind } from '../api'
 import { ErrorBanner, Field, PageHeader, Panel, useApi, useSubmit } from '../ui'
 
 export default function SettingsPage() {
@@ -63,7 +63,79 @@ export default function SettingsPage() {
 
       <CategoriesPanel />
       <PasswordPanel />
+      <EmailPanel />
     </>
+  )
+}
+
+function EmailPanel() {
+  const { data, reload } = useApi<EmailSettings>('/settings/email')
+  const [f, setF] = useState<EmailSettings & { password: string }>()
+  const [notice, setNotice] = useState<string>()
+  const { error, saving, run } = useSubmit()
+  useEffect(() => { if (data) setF({ ...data, password: '' }) }, [data])
+  if (!f) return null
+
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => {
+    setNotice(undefined)
+    setF(s => s && { ...s, [k]: k === 'port' ? Number(e.target.value) : e.target.value })
+  }
+  const useGmail = () => setF(s => s && { ...s, host: 'smtp.gmail.com', port: 587, security: 'StartTls' })
+
+  const save = () => api.put('/settings/email', {
+    host: f.host, port: f.port, security: f.security, username: f.username || null, password: f.password || null,
+    fromAddress: f.fromAddress, fromName: f.fromName || null, accountEmail: f.accountEmail,
+  })
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (await run(save)) { setNotice('Saved.'); void reload() }
+  }
+  const test = async () => {
+    let sentTo = ''
+    if (await run(async () => { await save(); sentTo = (await api.post<{ sentTo: string }>('/settings/email/test')).sentTo })) {
+      setNotice(`Test email sent to ${sentTo}. Check that inbox (and spam).`)
+      void reload()
+    }
+  }
+
+  return (
+    <Panel title="Password reset email">
+      <p className="muted">
+        "Forgot password?" on the sign-in page emails you a one-time code. Set up the email account it's sent from.
+        For Gmail, turn on 2-step verification and create an <b>app password</b> (Google Account → Security → App passwords); your normal Gmail password won't work.
+      </p>
+      <form onSubmit={submit}>
+        <div className="form-grid">
+          <Field label="Send reset codes to" hint="Your own email address">
+            <input type="email" value={f.accountEmail ?? ''} onChange={set('accountEmail')} required /></Field>
+          <Field label="Send from address" hint="The account below, e.g. you@gmail.com">
+            <input type="email" value={f.fromAddress} onChange={set('fromAddress')} required /></Field>
+          <Field label="Email server (SMTP)" hint="e.g. smtp.gmail.com">
+            <input value={f.host} onChange={set('host')} required /></Field>
+          <Field label="Port and security">
+            <div className="inline-fields">
+              <input type="number" min="1" max="65535" value={f.port} onChange={set('port')} required />
+              <select value={f.security} onChange={e => { setNotice(undefined); setF(s => s && { ...s, security: e.target.value as EmailSecurity }) }}>
+                <option value="StartTls">STARTTLS (port 587)</option>
+                <option value="SslOnConnect">SSL/TLS (port 465)</option>
+              </select>
+            </div>
+          </Field>
+          <Field label="Sign-in username" hint="Usually the full email address">
+            <input value={f.username ?? ''} onChange={set('username')} autoComplete="off" /></Field>
+          <Field label="Password / app password" hint={f.hasPassword ? 'Saved. Leave blank to keep it.' : 'Stored encrypted on this PC'}>
+            <input type="password" value={f.password} onChange={set('password')} autoComplete="new-password"
+              placeholder={f.hasPassword ? '••••••••' : ''} /></Field>
+        </div>
+        <div className="form-buttons">
+          <button type="submit" disabled={saving}>Save</button>
+          <button type="button" className="secondary" onClick={test} disabled={saving}>Save and send test email</button>
+          <button type="button" className="link" onClick={useGmail}>Use Gmail settings</button>
+        </div>
+      </form>
+      {notice && <div className="notice ok">{notice}</div>}
+      <ErrorBanner message={error} />
+    </Panel>
   )
 }
 
